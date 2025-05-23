@@ -1,5 +1,5 @@
 {
-  "name": "moonplayer-api",
+  "name": "phim-kappa",
   "version": "1.0.0",
   "description": "API for MoonPlayer using phimapi.com",
   "main": "server.js",
