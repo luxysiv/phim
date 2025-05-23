@@ -1,44 +1,45 @@
 const express = require('express');
 const router = express.Router();
-const { getCategories } = require('../services/phimapi');
+const { getNewMovies } = require('../services/phimapi');
 
 router.get('/', async (req, res) => {
-  // Lấy danh sách thể loại
-  const categories = await getCategories();
+  // Lấy danh sách phim mới từ phimapi.com
+  const moviesData = await getNewMovies(1);
+  const movies = moviesData.items || [];
 
-  // Tạo danh sách thể loại cho JSON
-  const categoryList = categories.map((cat) => ({
-    text: cat.name,
-    type: 'radio',
-    url: `https://phimapi.com/v1/api/the-loai/${cat.slug}?page=1&sort_field=_id&sort_type=asc`
+  // Chuyển đổi dữ liệu phim thành định dạng channels
+  const channels = movies.map((movie) => ({
+    id: movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`,
+    name: movie.name || movie.title || 'Unknown Title',
+    description: movie.description || movie.content || '',
+    image: {
+      url: movie.poster_url || movie.thumb_url || 'https://via.placeholder.com/150',
+      type: 'cover'
+    },
+    type: movie.episodes ? 'playlist' : 'single',
+    display: 'text-below',
+    enable_detail: true,
+    remote_data: {
+      url: `https://phimapi.com/phim/${movie.slug}`
+    },
+    force_landscape: true,
+    share: {
+      url: `https://phimapi.com/phim/${movie.slug}/share`
+    }
   }));
 
   // JSON trả về
   const response = {
-    name: 'MyMoonPlayerAPI',
-    id: 'mymoonplayer-api',
-    url: 'https://phim-kappa.vercel.app/', // Thay bằng domain Vercel
-    color: '#0f172a',
+    name: 'Phim Kappa',
+    id: 'phimkappa',
+    color: '#000000',
+    description: 'Phim Kappa là nơi tập hợp các bộ phim hay nhất, mới nhất, hot nhất, mang đến trải nghiệm xem phim mượt mà và chất lượng cao.',
     image: {
-      url: 'https://phim-kappa.vercel.app/',
+      url: 'https://phim-kappa.vercel.app/public/logo.png',
       type: 'cover'
     },
-    description: 'Nền tảng xem phim trực tuyến miễn phí, cung cấp kho phim đa dạng, giao diện thân thiện, tốc độ tải nhanh và chất lượng hình ảnh sắc nét.',
-    share: {
-      url: 'https://phim-kappa.vercel.app/'
-    },
-    sorts: [
-      {
-        text: 'Mới nhất',
-        type: 'radio',
-        url: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=1'
-      },
-      {
-        text: 'Thể loại',
-        type: 'dropdown',
-        value: categoryList
-      }
-    ]
+    grid_number: 3,
+    channels: channels
   };
 
   res.json(response);
