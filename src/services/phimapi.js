@@ -2,26 +2,15 @@ const axios = require('axios');
 
 const BASE_URL = 'https://phimapi.com';
 
-// Lấy danh sách thể loại
-async function getCategories() {
+// Lấy danh sách phim mới cập nhật
+async function getNewMovies(page = 1) {
   try {
-    const response = await axios.get(`${BASE_URL}/the-loai`);
+    const response = await axios.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching categories:', error.message);
-    return [];
+    console.error('Error fetching new movies:', error.message);
+    return { items: [], totalPages: 0 };
   }
 }
 
-// Lấy danh sách quốc gia
-async function getCountries() {
-  try {
-    const response = await axios.get(`${BASE_URL}/quoc-gia`);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching countries:', error.message);
-    return [];
-  }
-}
-
-module.exports = { getCategories, getCountries };
+module.exports = { getNewMovies };
