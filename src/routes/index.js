@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
   const response = {
     name: 'MyMoonPlayerAPI',
     id: 'mymoonplayer-api',
-    url: 'https://your-vercel-domain.vercel.app', // Thay bằng domain Vercel
+    url: 'https://phim-kappa.vercel.app/', // Thay bằng domain Vercel
     color: '#0f172a',
     image: {
       url: 'https://phim-kappa.vercel.app/',
