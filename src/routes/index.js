@@ -20,12 +20,12 @@ router.get('/', async (req, res) => {
     url: 'https://your-vercel-domain.vercel.app', // Thay bằng domain Vercel
     color: '#0f172a',
     image: {
-      url: 'https://your-vercel-domain.vercel.app/public/logo.png',
+      url: 'https://phim-kappa.vercel.app/',
       type: 'cover'
     },
     description: 'Nền tảng xem phim trực tuyến miễn phí, cung cấp kho phim đa dạng, giao diện thân thiện, tốc độ tải nhanh và chất lượng hình ảnh sắc nét.',
     share: {
-      url: 'https://your-vercel-domain.vercel.app'
+      url: 'https://phim-kappa.vercel.app/'
     },
     sorts: [
       {
