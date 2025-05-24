@@ -1,16 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { getCategories, getNewMovies, getMoviesByCategory, searchMovies, getMovieDetail } = require('../services/phimapi');
+const { getCategories, getCountries, getNewMovies, getMoviesByCategory, getMoviesByCountry, searchMovies, getMovieDetail } = require('../services/phimapi');
 
 const CDN_IMAGE = 'https://phimimg.com';
 
 router.get('/', async (req, res, next) => {
   try {
     const categories = await getCategories();
+    const countries = await getCountries();
     const categoryList = categories.map((cat) => ({
       text: cat.name || 'Unknown Category',
       type: 'radio',
       url: `https://phim-kappa.vercel.app/sort/category?uid=${cat.slug || 'unknown'}`
+    }));
+    const countryList = countries.map((country) => ({
+      text: country.name || 'Unknown Country',
+      type: 'radio',
+      url: `https://phim-kappa.vercel.app/sort/country?uid=${country.slug || 'unknown'}`
     }));
 
     const response = {
@@ -36,6 +42,11 @@ router.get('/', async (req, res, next) => {
           text: 'Thể loại',
           type: 'dropdown',
           value: categoryList
+        },
+        {
+          text: 'Quốc gia',
+          type: 'dropdown',
+          value: countryList
         }
       ]
     };
@@ -57,7 +68,7 @@ function mapToChannels(movies) {
       name: movie.name || movie.title || 'Unknown Title',
       description: movie.description || movie.content || 'Không có mô tả',
       image: {
-        url: imageUrl ? `${CDN_IMAGE}/${imageUrl}` : 'https://via.placeholder.com/150',
+        url: imageUrl && !imageUrl.startsWith('http') ? `${CDN_IMAGE}/${imageUrl}` : imageUrl || 'https://via.placeholder.com/150',
         type: 'cover'
       },
       type: movie.type === 'series' ? 'playlist' : 'single',
@@ -104,6 +115,26 @@ router.get('/sort/category', async (req, res, next) => {
     res.json({ channels });
   } catch (error) {
     console.error('Error in /sort/category endpoint:', error.message);
+    next(error);
+  }
+});
+
+router.get('/sort/country', async (req, res, next) => {
+  try {
+    const uid = req.query.uid;
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing uid parameter' });
+    }
+
+    const moviesData = await getMoviesByCountry(uid, 1);
+    const movies = moviesData.data?.items || [];
+    if (!movies.length) {
+      console.warn(`No movies found for country: ${uid}`);
+    }
+    const channels = mapToChannels(movies);
+    res.json({ channels });
+  } catch (error) {
+    console.error('Error in /sort/country endpoint:', error.message);
     next(error);
   }
 });
