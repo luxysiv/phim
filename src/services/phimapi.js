@@ -4,6 +4,7 @@ const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 });
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
+const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5']; // Danh sách subdomain
 
 async function getCategories() {
   const cacheKey = 'categories';
@@ -108,6 +109,32 @@ async function searchMovies(keyword, params = {}) {
   }
 }
 
+async function validateM3u8Link(link, slug, episodeName, serverName) {
+  for (const subdomain of SERVER_SUBDOMAINS) {
+    const url = link.replace(/s\d\.phim1280\.tv/, `${subdomain}.phim1280.tv`);
+    try {
+      const response = await axios.head(url, {
+        timeout: 5000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+          'Referer': 'https://phimapi.com',
+          'Origin': 'https://phimapi.com'
+        }
+      });
+      const contentType = response.headers['content-type'] || '';
+      if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
+        cache.set(`valid_subdomain_${link}`, subdomain, 3600);
+        return url;
+      } else {
+        console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (subdomain: ${subdomain})`);
+      }
+    } catch (error) {
+      console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (subdomain: ${subdomain}): ${error.message}`);
+    }
+  }
+  return null;
+}
+
 async function getMovieDetail(slug) {
   const cacheKey = `movie_${slug}`;
   const cached = cache.get(cacheKey);
@@ -117,7 +144,7 @@ async function getMovieDetail(slug) {
     const response = await axios.get(`${BASE_URL}/phim/${slug}`, {
       timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
         'Referer': 'https://phimapi.com'
       }
     });
@@ -126,17 +153,24 @@ async function getMovieDetail(slug) {
       if (!data.episodes || data.episodes.length === 0) {
         console.warn(`No episodes found for slug: ${slug}`);
       } else {
-        data.episodes.forEach((server, index) => {
+        for (const server of data.episodes) {
           if (!server.server_data || server.server_data.length === 0) {
             console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
           } else {
-            server.server_data.forEach((item, idx) => {
+            for (const item of server.server_data) {
               if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
                 console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
+              } else {
+                const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
+                if (validLink) {
+                  item.link_m3u8 = validLink;
+                } else {
+                  console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
+                }
               }
-            });
+            }
           }
-        });
+        }
       }
       cache.set(cacheKey, data);
     } else {
