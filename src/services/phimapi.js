@@ -1,11 +1,11 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
 
-const cache = new NodeCache({ stdTTL: 3600 });
+const cache = new NodeCache({ stdTTL: 300 }); // Giảm TTL xuống 300s
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
 const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5', 's6'];
-const SERVER_DOMAINS = ['phim1280.tv', 'kkphimplayer6.com'];
+const SERVER_DOMAINS = ['phim1280.tv', 'kkphimplayer6.com', 'kkphimplayer.com', 'phim1280.com'];
 
 async function getCategories() {
   const cacheKey = 'categories';
@@ -111,50 +111,43 @@ async function searchMovies(keyword, params = {}) {
 }
 
 async function validateM3u8Link(link, slug, episodeName, serverName) {
-  const cachedUrl = cache.get(`valid_url_${link}`);
+  const cacheKey = `valid_url_${link}`;
+  const cachedUrl = cache.get(cacheKey);
   if (cachedUrl) {
     return cachedUrl;
   }
 
-  const requests = [];
+  // Thử từng domain và subdomain tuần tự để tránh quá tải
   for (const domain of SERVER_DOMAINS) {
     for (const subdomain of SERVER_SUBDOMAINS) {
       const url = link.replace(/s\d+\.\w+\.\w+/, `${subdomain}.${domain}`);
-      requests.push(
-        (async () => {
-          try {
-            const response = await axios.head(url, {
-              timeout: 10000,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-                'Referer': 'https://phimapi.com',
-                'Origin': 'https://phimapi.com',
-                'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
-                'Connection': 'keep-alive'
-              }
-            });
-            const contentType = response.headers['content-type'] || '';
-            if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
-              return { url };
-            }
-            console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (${url})`);
-            return null;
-          } catch (error) {
-            console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (${url}): ${error.message}`);
-            return null;
+      try {
+        const response = await axios.head(url, {
+          timeout: 15000, // Tăng timeout lên 15s
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+            'Referer': 'https://phimapi.com',
+            'Origin': 'https://phimapi.com',
+            'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
+            'Accept-Encoding': 'identity',
+            'Connection': 'keep-alive'
           }
-        })()
-      );
+        });
+        const contentType = response.headers['content-type'] || '';
+        if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
+          cache.set(cacheKey, url, 300);
+          console.log(`Validated m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${url}`);
+          return url;
+        }
+        console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (${url})`);
+      } catch (error) {
+        console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (${url}): ${error.message}`);
+      }
     }
   }
 
-  const results = await Promise.all(requests);
-  const validResult = results.find((result) => result);
-  if (validResult) {
-    cache.set(`valid_url_${link}`, validResult.url, 3600);
-    return validResult.url;
-  }
-  return link; // Trả về link gốc nếu không validate được
+  console.error(`No valid m3u8 link found for episode ${episodeName} in server ${serverName} for slug: ${slug}`);
+  return null; // Trả về null nếu không tìm thấy link hợp lệ
 }
 
 async function getMovieDetail(slug) {
@@ -183,6 +176,7 @@ async function getMovieDetail(slug) {
             for (const item of server.server_data) {
               if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
                 console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
+                item.link_m3u8 = null;
               } else {
                 const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
                 item.link_m3u8 = validLink;
