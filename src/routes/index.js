@@ -230,10 +230,11 @@ router.get('/channel-detail', async (req, res, next) => {
     if (movie.episodes && movie.episodes.length > 0) {
       movie.episodes.forEach((server, serverIndex) => {
         const streams = (server.server_data || []).map((episode, episodeIndex) => {
-          const streamId = `${server.server_name}__${episode.name}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
+          const normalizedName = episode.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
+          const streamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
           return {
             id: streamId,
-            name: isSeries ? `${episode.name} (${server.server_name})` : 'Full',
+            name: isSeries ? `${normalizedName} (${server.server_name})` : 'Full',
             remote_data: {
               url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
               encrypted: false
@@ -263,12 +264,8 @@ router.get('/channel-detail', async (req, res, next) => {
       return res.status(404).json({ error: `No playable episodes available for ${movie.movie.name}` });
     }
 
-    const response = {
-      tags,
-      sources
-    };
-
-    res.json(response);
+    console.log(`Returning ${sources.reduce((acc, src) => acc + src.contents[0].streams.length, 0)} episodes for uid: ${uid}`);
+    res.json({ tags, sources });
   } catch (error) {
     console.error('Error in /channel-detail endpoint:', error.message);
     next(error);
@@ -315,8 +312,9 @@ router.get('/stream-detail', async (req, res, next) => {
     let found = false;
     (movie.episodes || []).forEach((server, serverIndex) => {
       (server.server_data || []).forEach((ep, episodeIndex) => {
-        const expectedStreamId = `${server.server_name}__${ep.name}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
-        if (expectedStreamId === streamId) {
+        const normalizedName = ep.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
+        const expectedStreamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
+        if (expectedStreamId === streamId || streamId.includes(`${server.server_name}__${normalizedName}__${movie.movie._id}`)) {
           episode = ep;
           serverName = server.server_name;
           found = true;
@@ -341,7 +339,8 @@ router.get('/stream-detail', async (req, res, next) => {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
         'Referer': 'https://phimapi.com',
         'Origin': 'https://phimapi.com',
-        'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL'
+        'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
+        'Connection': 'keep-alive'
       }
     });
   } catch (error) {
