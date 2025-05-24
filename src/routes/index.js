@@ -260,7 +260,7 @@ router.get('/channel-detail', async (req, res, next) => {
 
     if (sources.length === 0 || sources.every(source => source.contents[0].streams.length === 0)) {
       console.warn(`No valid episodes found for uid: ${uid}`);
-      return res.status(404).json({ error: `No episodes available for ${movie.movie.name}` });
+      return res.status(404).json({ error: `No playable episodes available for ${movie.movie.name}` });
     }
 
     const response = {
@@ -331,29 +331,13 @@ router.get('/stream-detail', async (req, res, next) => {
       return res.status(404).json({ error: `Invalid stream URL for ${episode.name} (${serverName})` });
     }
 
-    try {
-      const response = await axios.head(episode.link_m3u8, {
-        timeout: 5000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Referer': 'https://phimapi.com'
-        }
-      });
-      if (!response.headers['content-type']?.includes('application/vnd.apple.mpegurl')) {
-        console.warn(`Non-m3u8 Content-Type for streamId: ${streamId}: ${response.headers['content-type']}`);
-        return res.status(404).json({ error: `Invalid m3u8 format for ${episode.name} (${serverName})` });
-      }
-    } catch (error) {
-      console.warn(`Failed to validate m3u8 link for streamId: ${streamId}: ${error.message}`);
-      return res.status(404).json({ error: `Unable to access stream URL for ${episode.name} (${serverName})` });
-    }
-
     res.json({
       url: episode.link_m3u8,
       encrypted: false,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://phimapi.com'
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+        'Referer': 'https://phimapi.com',
+        'Origin': 'https://phimapi.com'
       }
     });
   } catch (error) {
