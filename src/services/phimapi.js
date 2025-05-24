@@ -163,33 +163,24 @@ async function getMovieDetail(slug) {
       }
     });
     const data = response.data || null;
-    if (data) {
-      if (!data.episodes || data.episodes.length === 0) {
-        console.warn(`No episodes found for slug: ${slug}`);
-      } else {
-        data.episodes.forEach((server, serverIndex) => {
-          if (!server.server_data || server.server_data.length === 0) {
-            console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
-          } else {
-            console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
-            server.server_data.forEach(async (item, itemIndex) => {
-              if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
-                console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-              } else {
-                const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
-                if (validLink) {
-                  item.link_m3u8 = validLink;
-                } else {
-                  console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-                }
-              }
-            });
+    if (data && data.episodes && data.episodes.length > 0) {
+      for (const server of data.episodes) {
+        if (server.server_data && server.server_data.length > 0) {
+          for (const item of server.server_data) {
+            if (item.link_m3u8 && item.link_m3u8.startsWith('http')) {
+              const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
+              item.link_m3u8 = validLink || item.link_m3u8;
+            } else {
+              console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
+            }
           }
-        });
+        } else {
+          console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
+        }
       }
       cache.set(cacheKey, data);
     } else {
-      console.warn(`No data returned for slug: ${slug}`);
+      console.warn(`No data or episodes found for slug: ${slug}`);
     }
     return data;
   } catch (error) {
