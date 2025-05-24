@@ -226,34 +226,39 @@ router.get('/channel-detail', async (req, res, next) => {
       })
     ];
 
-    const sources = (movie.episodes || []).map((server, serverIndex) => {
-      const streams = (server.server_data || []).map((episode, episodeIndex) => {
-        const streamId = `${server.server_name}__${episode.name}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
-        return {
-          id: streamId,
-          name: `${episode.name} (${server.server_name})`,
-          remote_data: {
-            url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
-            encrypted: false
-          }
-        };
-      });
+    const sources = [];
+    if (movie.episodes && movie.episodes.length > 0) {
+      movie.episodes.forEach((server, serverIndex) => {
+        const streams = (server.server_data || []).map((episode, episodeIndex) => {
+          const streamId = `${server.server_name}__${episode.name}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
+          return {
+            id: streamId,
+            name: isSeries ? `${episode.name} (${server.server_name})` : 'Full',
+            remote_data: {
+              url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
+              encrypted: false
+            }
+          };
+        });
 
-      return {
-        id: `${movie.movie._id}_${serverIndex}`,
-        name: server.server_name,
-        contents: [
-          {
+        if (streams.length > 0) {
+          sources.push({
             id: `${movie.movie._id}_${serverIndex}`,
-            name: '',
-            grid_number: 3,
-            streams
-          }
-        ]
-      };
-    });
+            name: server.server_name,
+            contents: [
+              {
+                id: `${movie.movie._id}_${serverIndex}`,
+                name: '',
+                grid_number: 3,
+                streams
+              }
+            ]
+          });
+        }
+      });
+    }
 
-    if (!isSeries || sources.length === 0 || sources.every(source => source.contents[0].streams.length === 0)) {
+    if (sources.length === 0 || sources.every(source => source.contents[0].streams.length === 0)) {
       console.warn(`No valid episodes found for uid: ${uid}`);
       return res.status(404).json({ error: `No episodes available for ${movie.movie.name}` });
     }
@@ -327,21 +332,29 @@ router.get('/stream-detail', async (req, res, next) => {
     }
 
     try {
-      await axios.head(episode.link_m3u8, {
+      const response = await axios.head(episode.link_m3u8, {
         timeout: 5000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           'Referer': 'https://phimapi.com'
         }
       });
+      if (!response.headers['content-type']?.includes('application/vnd.apple.mpegurl')) {
+        console.warn(`Non-m3u8 Content-Type for streamId: ${streamId}: ${response.headers['content-type']}`);
+        return res.status(404).json({ error: `Invalid m3u8 format for ${episode.name} (${serverName})` });
+      }
     } catch (error) {
-      console.warn(`Failed to validate m3u8 link for streamId: ${streamId}`, error.message);
+      console.warn(`Failed to validate m3u8 link for streamId: ${streamId}: ${error.message}`);
       return res.status(404).json({ error: `Unable to access stream URL for ${episode.name} (${serverName})` });
     }
 
     res.json({
       url: episode.link_m3u8,
-      encrypted: false
+      encrypted: false,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://phimapi.com'
+      }
     });
   } catch (error) {
     console.error('Error in /stream-detail endpoint:', error.message);
