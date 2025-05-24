@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { getCategories, getNewMovies, getMoviesByCategory } = require('../services/phimapi');
+const { getCategories, getNewMovies, getMoviesByCategory, getMovieDetail } = require('../services/phimapi');
 
 // Endpoint chính trả về JSON với sorts
 router.get('/', async (req, res) => {
   // Lấy danh sách thể loại
   const categories = await getCategories();
 
-  // Tạo danh sách thể loại với UID ngẫu nhiên
+  // Tạo danh sách thể loại với UID dựa trên slug
   const categoryList = categories.map((cat) => ({
     text: cat.name,
     type: 'radio',
@@ -104,24 +104,28 @@ router.get('/sort/category', async (req, res) => {
   res.json({ channels });
 });
 
-// Endpoint /channel-detail trả về chi tiết phim (tạm thời proxy đến phimapi.com)
+// Endpoint /channel-detail trả về chi tiết phim
 router.get('/channel-detail', async (req, res) => {
   const uid = req.query.uid;
   if (!uid) {
     return res.status(400).json({ error: 'Missing uid parameter' });
   }
 
-  try {
-    const response = await axios.get(`https://phimapi.com/phim/${uid}`);
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch movie details' });
+  const movie = await getMovieDetail(uid);
+  if (!movie) {
+    return res.status(500).json({ error: 'Failed to fetch movie details' });
   }
+
+  res.json(movie);
 });
 
-// Endpoint /share-channel (tạm thời trả về URL tĩnh)
+// Endpoint /share-channel trả về URL chia sẻ
 router.get('/share-channel', (req, res) => {
   const uid = req.query.uid;
+  if (!uid) {
+    return res.status(400).json({ error: 'Missing uid parameter' });
+  }
+
   res.json({ url: `https://phim-kappa.vercel.app/share-channel?uid=${uid}` });
 });
 
