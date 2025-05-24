@@ -22,7 +22,7 @@ async function getProviderData() {
   }));
 
   const enrichedMovies = await enrichMovies(movies);
-  const channels = mapToChannels(enrichedMovies);
+  const moviesList = mapToChannels(enrichedMovies);
 
   return {
     name: 'Phim Kappa',
@@ -55,59 +55,52 @@ async function getProviderData() {
       }
     ],
     grid_number: 3,
-    channels
+    movies: moviesList // Đổi từ channels thành movies để tương thích MonPlayer
   };
 }
 
-router.get('/', async (req, res, next) => {
-  try {
-    const providerData = await getProviderData();
-    res.json(providerData);
-  } catch (error) {
-    console.error('Error in / endpoint:', error.message);
-    next(error);
-  }
-});
-
 async function enrichMovies(movies) {
-  const enriched = [];
-  for (const movie of movies.slice(0, 15)) {
+  return Promise.all(movies.map(async (movie) => {
     const detail = await getMovieDetail(movie.slug);
-    enriched.push({
+    return {
       ...movie,
       description: detail?.movie?.content || detail?.movie?.description || 'Không có mô tả chi tiết.',
       type: detail?.movie?.type || 'series'
-    });
-  }
-  return [...enriched, ...movies.slice(15)];
+    };
+  }));
 }
 
 function mapToChannels(movies) {
   return movies.map((movie) => {
     const id = movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`;
-    const slug = movie.slug || id;
     const imageUrl = movie.poster_url || movie.thumb_url;
     const isSeries = ['series', 'hoathinh'].includes(movie.type);
     return {
       id,
-      name: movie.name || movie.title || 'Unknown Title',
+      title: movie.name || movie.title || 'Unknown Title',
       description: movie.description || movie.content || 'Không có mô tả chi tiết.',
-      image: {
-        url: imageUrl && !imageUrl.startsWith('http') ? `${CDN_IMAGE}/${imageUrl}` : imageUrl || 'https://via.placeholder.com/200x300',
-        type: 'cover'
-      },
-      type: isSeries ? 'playlist' : 'single',
-      display: 'text-below',
-      enable_detail: true,
+      thumbnail: imageUrl && !imageUrl.startsWith('http') ? `${CDN_IMAGE}/${imageUrl}` : imageUrl || 'https://via.placeholder.com/200x300',
+      category: movie.category?.[0]?.name || 'Không xác định',
+      genres: movie.category?.map(cat => cat.name) || [],
+      type: isSeries ? 'series' : 'movie',
+      year: movie.year || 'N/A',
+      duration: movie.time || 'N/A',
       remote_data: {
-        url: `https://phim-kappa.vercel.app/channel-detail?uid=${slug}`
-      },
-      share: {
-        url: `https://phim-kappa.vercel.app/share-channel?uid=${slug}`
+        url: `https://phim-kappa.vercel.app/channel-detail?uid=${movie.slug || id}`
       }
     };
   });
 }
+
+router.get('/', async (req, res, next) => {
+  try {
+    const providerData = await getProviderData();
+    res.json({ movies: providerData.movies });
+  } catch (error) {
+    console.error('Error in / endpoint:', error.message);
+    next(error);
+  }
+});
 
 router.get('/newest', async (req, res, next) => {
   try {
@@ -117,8 +110,8 @@ router.get('/newest', async (req, res, next) => {
       console.warn('No movies found in /newest');
     }
     const enrichedMovies = await enrichMovies(movies);
-    const channels = mapToChannels(enrichedMovies);
-    res.json({ channels });
+    const moviesList = mapToChannels(enrichedMovies);
+    res.json({ movies: moviesList });
   } catch (error) {
     console.error('Error in /newest endpoint:', error.message);
     next(error);
@@ -131,15 +124,14 @@ router.get('/sort/category', async (req, res, next) => {
     if (!uid) {
       return res.status(400).json({ error: 'Missing uid parameter' });
     }
-
     const moviesData = await getMoviesByCategory(uid, 1, 20);
     const movies = moviesData.data?.items || [];
     if (!movies.length) {
       console.warn(`No movies found for category: ${uid}`);
     }
     const enrichedMovies = await enrichMovies(movies);
-    const channels = mapToChannels(enrichedMovies);
-    res.json({ channels });
+    const moviesList = mapToChannels(enrichedMovies);
+    res.json({ movies: moviesList });
   } catch (error) {
     console.error('Error in /sort/category endpoint:', error.message);
     next(error);
@@ -152,15 +144,14 @@ router.get('/sort/nation', async (req, res, next) => {
     if (!uid) {
       return res.status(400).json({ error: 'Missing uid parameter' });
     }
-
     const moviesData = await getMoviesByCountry(uid, 1, 20);
     const movies = moviesData.data?.items || [];
     if (!movies.length) {
       console.warn(`No movies found for nation: ${uid}`);
     }
     const enrichedMovies = await enrichMovies(movies);
-    const channels = mapToChannels(enrichedMovies);
-    res.json({ channels });
+    const moviesList = mapToChannels(enrichedMovies);
+    res.json({ movies: moviesList });
   } catch (error) {
     console.error('Error in /sort/nation endpoint:', error.message);
     next(error);
@@ -173,22 +164,20 @@ router.get('/search', async (req, res, next) => {
     if (!keyword) {
       return res.status(400).json({ error: 'Missing keyword parameter' });
     }
-
     const params = {
       category: req.query.category || '',
       country: req.query.country || '',
       year: req.query.year || '',
       sort_lang: req.query.sort_lang || ''
     };
-
     const moviesData = await searchMovies(keyword, params);
     const movies = moviesData.data?.items || [];
     if (!movies.length) {
       console.warn(`No movies found for keyword: ${keyword}`);
     }
     const enrichedMovies = await enrichMovies(movies);
-    const channels = mapToChannels(enrichedMovies);
-    res.json({ channels });
+    const moviesList = mapToChannels(enrichedMovies);
+    res.json({ movies: moviesList });
   } catch (error) {
     console.error('Error in /search endpoint:', error.message);
     next(error);
@@ -209,86 +198,46 @@ router.get('/channel-detail', async (req, res, next) => {
     }
 
     const isSeries = ['series', 'hoathinh'].includes(movie.movie.type);
-    const categories = await getCategories();
-    const tags = [
-      {
-        type: 'radio',
-        url: `https://phim-kappa.vercel.app/newest?k=${isSeries ? 'series' : 'movie'}`,
-        text: isSeries ? 'Phim bộ' : 'Phim lẻ'
-      },
-      ...(movie.movie.category || []).map((cat) => {
-        const category = categories.find((c) => c.name === cat.name);
-        return {
-          type: 'radio',
-          url: `https://phim-kappa.vercel.app/group-cate?uid=${category?.slug || 'unknown'}`,
-          text: cat.name || 'Unknown Category'
-        };
-      })
-    ];
+    const imageUrl = movie.movie.poster_url || movie.movie.thumb_url;
+    const movieData = {
+      id: movie.movie._id,
+      title: movie.movie.name || movie.movie.title || 'Unknown Title',
+      description: movie.movie.content || movie.movie.description || 'Không có mô tả chi tiết.',
+      thumbnail: imageUrl && !imageUrl.startsWith('http') ? `${CDN_IMAGE}/${imageUrl}` : imageUrl || 'https://via.placeholder.com/200x300',
+      category: movie.movie.category?.[0]?.name || 'Không xác định',
+      genres: movie.movie.category?.map(cat => cat.name) || [],
+      year: movie.movie.year || 'N/A',
+      duration: movie.movie.time || 'N/A',
+      type: isSeries ? 'series' : 'movie',
+      episodes: []
+    };
 
-    const sources = [];
     if (movie.episodes && movie.episodes.length > 0) {
       movie.episodes.forEach((server, serverIndex) => {
-        const streams = (server.server_data || []).map((episode, episodeIndex) => {
-          const normalizedName = episode.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
-          const streamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
-          return {
-            id: streamId,
-            name: isSeries ? `${normalizedName} (${server.server_name})` : 'Full',
-            remote_data: {
-              url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
-              encrypted: false
-            }
-          };
-        });
-
-        if (streams.length > 0) {
-          sources.push({
-            id: `${movie.movie._id}_${serverIndex}`,
-            name: server.server_name,
-            contents: [
-              {
-                id: `${movie.movie._id}_${serverIndex}`,
-                name: '',
-                grid_number: 3,
-                streams
+        server.server_data?.forEach((episode, episodeIndex) => {
+          if (episode.link_m3u8 && episode.link_m3u8.startsWith('http')) {
+            const normalizedName = episode.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
+            const streamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
+            movieData.episodes.push({
+              id: streamId,
+              title: isSeries ? `${normalizedName} (${server.server_name})` : 'Full',
+              remote_data: {
+                url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`
               }
-            ]
-          });
-        }
+            });
+          }
+        });
       });
     }
 
-    if (sources.length === 0 || sources.every(source => source.contents[0].streams.length === 0)) {
+    if (!movieData.episodes.length) {
       console.warn(`No valid episodes found for uid: ${uid}`);
       return res.status(404).json({ error: `No playable episodes available for ${movie.movie.name}` });
     }
 
-    console.log(`Returning ${sources.reduce((acc, src) => acc + src.contents[0].streams.length, 0)} episodes for uid: ${uid}`);
-    res.json({ tags, sources });
+    res.json(movieData);
   } catch (error) {
     console.error('Error in /channel-detail endpoint:', error.message);
-    next(error);
-  }
-});
-
-router.get('/group-cate', async (req, res, next) => {
-  try {
-    const uid = req.query.uid;
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing uid parameter' });
-    }
-
-    const moviesData = await getMoviesByCategory(uid, 1, 20);
-    const movies = moviesData.data?.items || [];
-    if (!movies.length) {
-      console.warn(`No movies found for category: ${uid}`);
-    }
-    const enrichedMovies = await enrichMovies(movies);
-    const channels = mapToChannels(enrichedMovies);
-    res.json({ channels });
-  } catch (error) {
-    console.error('Error in /group-cate endpoint:', error.message);
     next(error);
   }
 });
@@ -322,26 +271,21 @@ router.get('/stream-detail', async (req, res, next) => {
       });
     });
 
-    if (!found) {
-      console.warn(`No episode found for streamId: ${streamId} in channelId: ${channelId}`);
-      return res.status(404).json({ error: `Episode not found for streamId: ${streamId}` });
-    }
-
-    if (!episode.link_m3u8 || !episode.link_m3u8.startsWith('http')) {
-      console.warn(`Invalid m3u8 link for streamId: ${streamId} in channelId: ${channelId}`);
-      return res.status(404).json({ error: `Invalid stream URL for ${episode.name} (${serverName})` });
+    if (!found || !episode || !episode.link_m3u8 || !episode.link_m3u8.startsWith('http')) {
+      console.warn(`Invalid episode or m3u8 link for streamId: ${streamId} in channelId: ${channelId}`);
+      return res.status(404).json({ error: `Invalid stream for streamId: ${streamId}` });
     }
 
     res.json({
-      url: episode.link_m3u8,
-      encrypted: false,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-        'Referer': 'https://phimapi.com',
-        'Origin': 'https://phimapi.com',
-        'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
-        'Connection': 'keep-alive'
-      }
+      stream_links: [
+        {
+          id: "default",
+          name: "default",
+          type: "hls",
+          default: false,
+          url: episode.link_m3u8
+        }
+      ]
     });
   } catch (error) {
     console.error('Error in /stream-detail endpoint:', error.message);
@@ -367,15 +311,10 @@ router.get('/share-channel', async (req, res, next) => {
 
     const channel = {
       id: movie.movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`,
-      name: movie.movie.name || movie.movie.title || 'Unknown Title',
+      title: movie.movie.name || movie.movie.title || 'Unknown Title',
       description: movie.movie.content || movie.movie.description || 'Không có mô tả chi tiết.',
-      image: {
-        url: movie.movie.poster_url || movie.movie.thumb_url || 'https://via.placeholder.com/200x300',
-        type: 'cover'
-      },
-      type: isSeries ? 'playlist' : 'single',
-      display: 'text-below',
-      enable_detail: true,
+      thumbnail: movie.movie.poster_url || movie.movie.thumb_url || 'https://via.placeholder.com/200x300',
+      type: isSeries ? 'series' : 'movie',
       remote_data: {
         url: `https://phim-kappa.vercel.app/channel-detail?uid=${uid}`
       },
@@ -390,6 +329,26 @@ router.get('/share-channel', async (req, res, next) => {
     });
   } catch (error) {
     console.error('Error in /share-channel endpoint:', error.message);
+    next(error);
+  }
+});
+
+router.get('/group-cate', async (req, res, next) => {
+  try {
+    const uid = req.query.uid;
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing uid parameter' });
+    }
+    const moviesData = await getMoviesByCategory(uid, 1, 20);
+    const movies = moviesData.data?.items || [];
+    if (!movies.length) {
+      console.warn(`No movies found for category: ${uid}`);
+    }
+    const enrichedMovies = await enrichMovies(movies);
+    const moviesList = mapToChannels(enrichedMovies);
+    res.json({ movies: moviesList });
+  } catch (error) {
+    console.error('Error in /group-cate endpoint:', error.message);
     next(error);
   }
 });
