@@ -301,7 +301,6 @@ router.get('/stream-detail', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    const decodedStreamId = decodeURIComponent(streamId);
     const movie = await getMovieDetail(channelId);
     if (!movie || !movie.movie) {
       console.warn(`No movie details found for channelId: ${channelId}`);
@@ -311,11 +310,13 @@ router.get('/stream-detail', async (req, res, next) => {
     let episode;
     let serverName;
     let found = false;
+    
+    // Tìm episode tương ứng với streamId
     (movie.episodes || []).forEach((server, serverIndex) => {
       (server.server_data || []).forEach((ep, episodeIndex) => {
         const normalizedName = ep.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
         const expectedStreamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
-        if (expectedStreamId === decodedStreamId) {
+        if (expectedStreamId === streamId || decodeURIComponent(streamId).includes(`${server.server_name}__${normalizedName}__${movie.movie._id}`)) {
           episode = ep;
           serverName = server.server_name;
           found = true;
@@ -324,23 +325,29 @@ router.get('/stream-detail', async (req, res, next) => {
     });
 
     if (!found) {
-      console.warn(`No episode found for streamId: ${decodedStreamId} in channelId: ${channelId}`);
-      return res.status(404).json({ error: `Episode not found for streamId: ${decodedStreamId}` });
+      console.warn(`No episode found for streamId: ${streamId} in channelId: ${channelId}`);
+      return res.status(404).json({ error: `Episode not found for streamId: ${streamId}` });
     }
 
     if (!episode.link_m3u8 || !episode.link_m3u8.startsWith('http')) {
-      console.warn(`Invalid m3u8 link for streamId: ${decodedStreamId} in channelId: ${channelId}`);
+      console.warn(`Invalid m3u8 link for streamId: ${streamId} in channelId: ${channelId}`);
       return res.status(404).json({ error: `Invalid stream URL for ${episode.name} (${serverName})` });
     }
 
+    // Trả về đúng định dạng JSON mong muốn
     res.json({
       stream_links: [
         {
-          id: 'default',
-          name: 'default',
-          type: 'hls',
+          id: "default",
+          name: "default",
+          type: "hls",
           default: false,
-          url: episode.link_m3u8
+          url: episode.link_m3u8,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+            'Referer': 'https://phimapi.com/',
+            'Origin': 'https://phimapi.com'
+          }
         }
       ]
     });
