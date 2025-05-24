@@ -1,12 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const {
-  getCategories,
-  getNewMovies,
-  getMoviesByCategory,
-  searchMovies,
-  getMovieDetail
-} = require('../services/phimapi');
+const { getCategories, getNewMovies, getMoviesByCategory, searchMovies, getMovieDetail } = require('../services/phimapi');
 
 const CDN_IMAGE = 'https://phimimg.com';
 
@@ -57,12 +51,13 @@ function mapToChannels(movies) {
   return movies.map((movie) => {
     const id = movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`;
     const slug = movie.slug || id;
+    const imageUrl = movie.poster_url || movie.thumb_url;
     return {
       id,
-      name: movie.name || 'Không tên',
+      name: movie.name || movie.title || 'Unknown Title',
       description: movie.description || movie.content || 'Không có mô tả',
       image: {
-        url: movie.poster_url || movie.thumb_url || 'https://via.placeholder.com/150',
+        url: imageUrl ? `${CDN_IMAGE}/${imageUrl}` : 'https://via.placeholder.com/150',
         type: 'cover'
       },
       type: movie.type === 'series' ? 'playlist' : 'single',
@@ -82,6 +77,9 @@ router.get('/newest', async (req, res, next) => {
   try {
     const moviesData = await getNewMovies(1);
     const movies = moviesData.items || [];
+    if (!movies.length) {
+      console.warn('No movies found in /newest');
+    }
     const channels = mapToChannels(movies);
     res.json({ channels });
   } catch (error) {
@@ -93,10 +91,15 @@ router.get('/newest', async (req, res, next) => {
 router.get('/sort/category', async (req, res, next) => {
   try {
     const uid = req.query.uid;
-    if (!uid) return res.status(400).json({ error: 'Missing uid parameter' });
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing uid parameter' });
+    }
 
     const moviesData = await getMoviesByCategory(uid, 1);
     const movies = moviesData.data?.items || [];
+    if (!movies.length) {
+      console.warn(`No movies found for category: ${uid}`);
+    }
     const channels = mapToChannels(movies);
     res.json({ channels });
   } catch (error) {
@@ -108,7 +111,9 @@ router.get('/sort/category', async (req, res, next) => {
 router.get('/search', async (req, res, next) => {
   try {
     const keyword = req.query.keyword;
-    if (!keyword) return res.status(400).json({ error: 'Missing keyword parameter' });
+    if (!keyword) {
+      return res.status(400).json({ error: 'Missing keyword parameter' });
+    }
 
     const params = {
       category: req.query.category || '',
@@ -119,6 +124,9 @@ router.get('/search', async (req, res, next) => {
 
     const moviesData = await searchMovies(keyword, params);
     const movies = moviesData.data?.items || [];
+    if (!movies.length) {
+      console.warn(`No movies found for keyword: ${keyword}`);
+    }
     const channels = mapToChannels(movies);
     res.json({ channels });
   } catch (error) {
@@ -130,29 +138,17 @@ router.get('/search', async (req, res, next) => {
 router.get('/channel-detail', async (req, res, next) => {
   try {
     const uid = req.query.uid;
-    if (!uid) return res.status(400).json({ error: 'Missing uid parameter' });
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing uid parameter' });
+    }
 
     const movie = await getMovieDetail(uid);
-    if (!movie) return res.status(404).json({ error: 'Movie not found' });
+    if (!movie || !movie.movie) {
+      console.warn(`No movie details found for uid: ${uid}`);
+      return res.status(404).json({ error: `Movie not found for uid: ${uid}` });
+    }
 
-    const episodes = (movie.episodes || []).map(ep => ({
-      name: ep.name || 'Tập mới',
-      url: ep.link_m3u8 || ep.link_embed || ''
-    }));
-
-    const detail = {
-      id: movie._id || uid,
-      name: movie.name || 'Không tên',
-      description: movie.content || 'Không có mô tả',
-      image: {
-        url: movie.poster_url || movie.thumb_url || 'https://via.placeholder.com/150',
-        type: 'cover'
-      },
-      type: movie.type === 'series' ? 'playlist' : 'single',
-      episodes
-    };
-
-    res.json(detail);
+    res.json(movie);
   } catch (error) {
     console.error('Error in /channel-detail endpoint:', error.message);
     next(error);
@@ -162,7 +158,9 @@ router.get('/channel-detail', async (req, res, next) => {
 router.get('/share-channel', (req, res, next) => {
   try {
     const uid = req.query.uid;
-    if (!uid) return res.status(400).json({ error: 'Missing uid parameter' });
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing uid parameter' });
+    }
 
     res.json({ url: `https://phim-kappa.vercel.app/share-channel?uid=${uid}` });
   } catch (error) {
