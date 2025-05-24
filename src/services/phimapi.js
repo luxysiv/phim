@@ -139,6 +139,8 @@ async function getMovieDetail(slug) {
         });
       }
       cache.set(cacheKey, data);
+    } else {
+      console.warn(`No data returned for slug: ${slug}`);
     }
     return data;
   } catch (error) {
