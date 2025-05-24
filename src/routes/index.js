@@ -71,7 +71,7 @@ router.get('/', async (req, res, next) => {
 
 async function enrichMovies(movies) {
   const enriched = [];
-  for (const movie of movies.slice(0, 10)) { // Giảm xuống 10 phim để tránh timeout
+  for (const movie of movies.slice(0, 15)) {
     const detail = await getMovieDetail(movie.slug);
     enriched.push({
       ...movie,
@@ -79,7 +79,7 @@ async function enrichMovies(movies) {
       type: detail?.movie?.type || 'series'
     });
   }
-  return [...enriched, ...movies.slice(10)];
+  return [...enriched, ...movies.slice(15)];
 }
 
 function mapToChannels(movies) {
@@ -229,23 +229,15 @@ router.get('/channel-detail', async (req, res, next) => {
     const sources = [];
     if (movie.episodes && movie.episodes.length > 0) {
       movie.episodes.forEach((server, serverIndex) => {
-        const streams = (server.server_data || []).filter(episode => episode.link_m3u8).map((episode, episodeIndex) => {
+        const streams = (server.server_data || []).map((episode, episodeIndex) => {
           const normalizedName = episode.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
           const streamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
           return {
             id: streamId,
             name: isSeries ? `${normalizedName} (${server.server_name})` : 'Full',
             remote_data: {
-              url: episode.link_m3u8,
-              encrypted: false,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-                'Referer': 'https://phimapi.com',
-                'Origin': 'https://phimapi.com',
-                'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
-                'Accept-Encoding': 'identity',
-                'Connection': 'keep-alive'
-              }
+              url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
+              encrypted: false
             }
           };
         });
@@ -304,7 +296,7 @@ router.get('/group-cate', async (req, res, next) => {
 router.get('/stream-detail', async (req, res, next) => {
   try {
     const { channelId, streamId, contentId, sourceId } = req.query;
-    if (!channelId || !streamId) {
+    if (!channelId || !streamId || !contentId || !sourceId) {
       console.warn(`Missing parameters in /stream-detail: channelId=${channelId}, streamId=${streamId}, contentId=${contentId}, sourceId=${sourceId}`);
       return res.status(400).json({ error: 'Missing required parameters' });
     }
@@ -330,18 +322,6 @@ router.get('/stream-detail', async (req, res, next) => {
       });
     });
 
-    if (!found && !streamId) {
-      // Thử tìm tập đầu tiên nếu streamId rỗng
-      for (const server of movie.episodes || []) {
-        if (server.server_data && server.server_data.length > 0) {
-          episode = server.server_data[0];
-          serverName = server.server_name;
-          found = true;
-          break;
-        }
-      }
-    }
-
     if (!found) {
       console.warn(`No episode found for streamId: ${streamId} in channelId: ${channelId}`);
       return res.status(404).json({ error: `Episode not found for streamId: ${streamId}` });
@@ -360,7 +340,6 @@ router.get('/stream-detail', async (req, res, next) => {
         'Referer': 'https://phimapi.com',
         'Origin': 'https://phimapi.com',
         'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
-        'Accept-Encoding': 'identity',
         'Connection': 'keep-alive'
       }
     });
