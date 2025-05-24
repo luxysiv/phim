@@ -4,15 +4,11 @@ const path = require('path');
 
 const app = express();
 
-// Phục vụ file tĩnh (logo)
 app.use('/public', express.static(path.join(__dirname, 'public')));
-
-// Sử dụng routes
 app.use('/', routes);
 
-// Xử lý lỗi chung
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Server error:', err.message);
   res.status(500).json({ error: 'Internal server error' });
 });
 
