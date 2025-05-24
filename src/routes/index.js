@@ -58,6 +58,19 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+async function enrichMovies(movies) {
+  const enriched = [];
+  for (const movie of movies) {
+    const detail = await getMovieDetail(movie.slug);
+    enriched.push({
+      ...movie,
+      description: detail?.movie?.content || 'Không có mô tả',
+      type: detail?.movie?.type || 'series'
+    });
+  }
+  return enriched;
+}
+
 function mapToChannels(movies) {
   return movies.map((movie) => {
     const id = movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`;
@@ -86,12 +99,13 @@ function mapToChannels(movies) {
 
 router.get('/newest', async (req, res, next) => {
   try {
-    const moviesData = await getNewMovies(1);
+    const moviesData = await getNewMovies(1, 20);
     const movies = moviesData.items || [];
     if (!movies.length) {
       console.warn('No movies found in /newest');
     }
-    const channels = mapToChannels(movies);
+    const enrichedMovies = await enrichMovies(movies);
+    const channels = mapToChannels(enrichedMovies);
     res.json({ channels });
   } catch (error) {
     console.error('Error in /newest endpoint:', error.message);
@@ -106,12 +120,13 @@ router.get('/sort/category', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing uid parameter' });
     }
 
-    const moviesData = await getMoviesByCategory(uid, 1);
+    const moviesData = await getMoviesByCategory(uid, 1, 20);
     const movies = moviesData.data?.items || [];
     if (!movies.length) {
       console.warn(`No movies found for category: ${uid}`);
     }
-    const channels = mapToChannels(movies);
+    const enrichedMovies = await enrichMovies(movies);
+    const channels = mapToChannels(enrichedMovies);
     res.json({ channels });
   } catch (error) {
     console.error('Error in /sort/category endpoint:', error.message);
@@ -126,12 +141,13 @@ router.get('/sort/country', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing uid parameter' });
     }
 
-    const moviesData = await getMoviesByCountry(uid, 1);
+    const moviesData = await getMoviesByCountry(uid, 1, 20);
     const movies = moviesData.data?.items || [];
     if (!movies.length) {
       console.warn(`No movies found for country: ${uid}`);
     }
-    const channels = mapToChannels(movies);
+    const enrichedMovies = await enrichMovies(movies);
+    const channels = mapToChannels(enrichedMovies);
     res.json({ channels });
   } catch (error) {
     console.error('Error in /sort/country endpoint:', error.message);
@@ -158,7 +174,8 @@ router.get('/search', async (req, res, next) => {
     if (!movies.length) {
       console.warn(`No movies found for keyword: ${keyword}`);
     }
-    const channels = mapToChannels(movies);
+    const enrichedMovies = await enrichMovies(movies);
+    const channels = mapToChannels(enrichedMovies);
     res.json({ channels });
   } catch (error) {
     console.error('Error in /search endpoint:', error.message);
