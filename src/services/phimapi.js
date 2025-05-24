@@ -1,95 +1,146 @@
 const axios = require('axios');
-const NodeCache = require('node-cache');
+const fs = require('fs').promises;
+const path = require('path');
 
-const cache = new NodeCache({ stdTTL: 3600 });
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
 const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5'];
+const TMP_DIR = '/tmp'; // Thư mục tạm thời của Vercel
+const FILE_TTL = 3600 * 1000; // 1 giờ (thời gian để ghi đè file, tính bằng ms)
+
+// Hàm tiện ích để đọc file JSON
+async function readJsonFile(filePath) {
+  try {
+    const data = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.warn(`Error reading file ${filePath}: ${error.message}`);
+    return null;
+  }
+}
+
+// Hàm tiện ích để ghi file JSON
+async function writeJsonFile(filePath, data) {
+  try {
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+    console.log(`Wrote file ${filePath}`);
+  } catch (error) {
+    console.error(`Error writing file ${filePath}: ${error.message}`);
+  }
+}
+
+// Hàm kiểm tra xem file có cần ghi đè không (dựa trên thời gian sửa đổi)
+async function shouldUpdateFile(filePath) {
+  try {
+    const stats = await fs.stat(filePath);
+    const now = Date.now();
+    return now - stats.mtimeMs > FILE_TTL; // Ghi đè nếu file cũ hơn 1 giờ
+  } catch {
+    return true; // File không tồn tại, cần tạo mới
+  }
+}
 
 async function getCategories() {
-  const cacheKey = 'categories';
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, 'categories.json');
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const response = await axios.get(`${BASE_URL}/the-loai`, { timeout: 15000 });
     const data = response.data || [];
-    cache.set(cacheKey, data);
+    await writeJsonFile(filePath, data);
     return data;
   } catch (error) {
     console.error('Error fetching categories:', error.message);
-    return [];
+    const cached = await readJsonFile(filePath);
+    return cached || [];
   }
 }
 
 async function getCountries() {
-  const cacheKey = 'countries';
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, 'countries.json');
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const response = await axios.get(`${BASE_URL}/quoc-gia`, { timeout: 15000 });
     const data = response.data || [];
-    cache.set(cacheKey, data);
+    await writeJsonFile(filePath, data);
     return data;
   } catch (error) {
     console.error('Error fetching countries:', error.message);
-    return [];
+    const cached = await readJsonFile(filePath);
+    return cached || [];
   }
 }
 
 async function getNewMovies(page = 1, limit = 20) {
-  const cacheKey = `new_movies_${page}_${limit}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, `new_movies_${page}_${limit}.json`);
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const response = await axios.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}&limit=${limit}`, { timeout: 15000 });
     const data = response.data || { items: [], totalPages: 0 };
-    cache.set(cacheKey, data);
+    await writeJsonFile(filePath, data);
     return data;
   } catch (error) {
     console.error('Error fetching new movies:', error.message);
-    return { items: [], totalPages: 0 };
+    const cached = await readJsonFile(filePath);
+    return cached || { items: [], totalPages: 0 };
   }
 }
 
 async function getMoviesByCategory(slug, page = 1, limit = 20) {
-  const cacheKey = `category_${slug}_${page}_${limit}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, `category_${slug}_${page}_${limit}.json`);
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const response = await axios.get(`${BASE_URL}/v1/api/the-loai/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`, { timeout: 15000 });
     const data = response.data || { data: { items: [], totalPages: 0 } };
-    cache.set(cacheKey, data);
+    await writeJsonFile(filePath, data);
     return data;
   } catch (error) {
     console.error(`Error fetching movies for category ${slug}:`, error.message);
-    return { data: { items: [], totalPages: 0 } };
+    const cached = await readJsonFile(filePath);
+    return cached || { data: { items: [], totalPages: 0 } };
   }
 }
 
 async function getMoviesByCountry(slug, page = 1, limit = 20) {
-  const cacheKey = `country_${slug}_${page}_${limit}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, `country_${slug}_${page}_${limit}.json`);
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const response = await axios.get(`${BASE_URL}/v1/api/quoc-gia/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`, { timeout: 15000 });
     const data = response.data || { data: { items: [], totalPages: 0 } };
-    cache.set(cacheKey, data);
+    await writeJsonFile(filePath, data);
     return data;
   } catch (error) {
     console.error(`Error fetching movies for country ${slug}:`, error.message);
-    return { data: { items: [], totalPages: 0 } };
+    const cached = await readJsonFile(filePath);
+    return cached || { data: { items: [], totalPages: 0 } };
   }
 }
 
 async function searchMovies(keyword, params = {}) {
-  const cacheKey = `search_${keyword}_${JSON.stringify(params)}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, `search_${keyword}_${JSON.stringify(params)}.json`);
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const query = new URLSearchParams({
@@ -101,18 +152,23 @@ async function searchMovies(keyword, params = {}) {
     }).toString();
     const response = await axios.get(`${BASE_URL}/v1/api/tim-kiem?${query}`, { timeout: 15000 });
     const data = response.data || { data: { items: [], totalPages: 0 } };
-    cache.set(cacheKey, data);
+    await writeJsonFile(filePath, data);
     return data;
   } catch (error) {
     console.error('Error searching movies:', error.message);
-    return { data: { items: [], totalPages: 0 } };
+    const cached = await readJsonFile(filePath);
+    return cached || { data: { items: [], totalPages: 0 } };
   }
 }
 
 async function validateM3u8Link(link, slug, episodeName, serverName) {
-  const cachedSubdomain = cache.get(`valid_subdomain_${link}`);
-  if (cachedSubdomain) {
-    return link.replace(/s\d\.phim1280\.tv/, `${cachedSubdomain}.phim1280.tv`);
+  const filePath = path.join(TMP_DIR, `valid_link_${Buffer.from(link).toString('base64')}.json`);
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached && cached.url) {
+      console.log(`Using cached valid link: ${cached.url} for episode ${episodeName} (slug: ${slug})`);
+      return cached.url;
+    }
   }
 
   for (const subdomain of SERVER_SUBDOMAINS) {
@@ -134,7 +190,7 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
         contentType.includes('application/x-mpegURL') ||
         response.status === 200
       ) {
-        cache.set(`valid_subdomain_${link}`, subdomain, 3600);
+        await writeJsonFile(filePath, { url });
         console.log(`Valid m3u8 link found: ${url} for episode ${episodeName} in server ${serverName} (slug: ${slug})`);
         return url;
       }
@@ -148,6 +204,7 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
   try {
     const response = await axios.head(link, { timeout: 10000 });
     if (response.status === 200) {
+      await writeJsonFile(filePath, { url: link });
       console.log(`Fallback: Valid original link: ${link} for episode ${episodeName} (slug: ${slug})`);
       return link;
     }
@@ -160,9 +217,11 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
 }
 
 async function getMovieDetail(slug) {
-  const cacheKey = `movie_${slug}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  const filePath = path.join(TMP_DIR, `movie_${slug}.json`);
+  if (!(await shouldUpdateFile(filePath))) {
+    const cached = await readJsonFile(filePath);
+    if (cached) return cached;
+  }
 
   try {
     const response = await axios.get(`${BASE_URL}/phim/${slug}`, {
@@ -183,24 +242,25 @@ async function getMovieDetail(slug) {
         for (const item of server.server_data) {
           if (item.link_m3u8 && item.link_m3u8.startsWith('http')) {
             const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
-            item.link_m3u8 = validLink || item.link_m3u8; // Giữ link gốc nếu không tìm thấy link hợp lệ
+            item.link_m3u8 = validLink || item.link_m3u8;
             console.log(`Processed link for episode ${item.name}: ${item.link_m3u8}`);
           } else if (item.link && item.link.endsWith('.mp4')) {
-            item.link_mp4 = item.link; // Hỗ trợ MP4 nếu có
+            item.link_mp4 = item.link;
             console.log(`Found MP4 link for episode ${item.name}: ${item.link_mp4}`);
           } else {
             console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
           }
         }
       }
-      cache.set(cacheKey, data);
+      await writeJsonFile(filePath, data);
     } else {
       console.warn(`No episodes or data for slug: ${slug}`);
     }
     return data;
   } catch (error) {
     console.error(`Error fetching movie detail for slug ${slug}:`, error.message);
-    return null;
+    const cached = await readJsonFile(filePath);
+    return cached || null;
   }
 }
 
