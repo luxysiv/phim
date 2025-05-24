@@ -35,4 +35,15 @@ async function getMoviesByCategory(slug, page = 1) {
   }
 }
 
-module.exports = { getCategories, getNewMovies, getMoviesByCategory };
+// Lấy chi tiết phim
+async function getMovieDetail(slug) {
+  try {
+    const response = await axios.get(`${BASE_URL}/phim/${slug}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching movie detail:', error.message);
+    return null;
+  }
+}
+
+module.exports = { getCategories, getNewMovies, getMoviesByCategory, getMovieDetail };
