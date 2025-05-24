@@ -7,7 +7,7 @@ const CDN_IMAGE = 'https://phimimg.com';
 async function getProviderData() {
   const categories = await getCategories();
   const countries = await getCountries();
-  const moviesData = await getNewMovies(1, 20);
+  const moviesData = await getNewMovies(1, 20); // Đảm bảo 20 phim
   const movies = moviesData.items || [];
 
   const categoryList = categories.map((cat) => ({
@@ -33,7 +33,7 @@ async function getProviderData() {
       url: 'https://phim-kappa.vercel.app/public/logo.png',
       type: 'cover'
     },
-    description: 'Phim Kappa - Kho phim trực tuyến miễn phí với hàng ngàn bộ phim bom tấn, phim độc lập, phim Hàn, Âu Mỹ, cập nhật mới nhất, chất lượng FHD, hỗ trợ Vietsub và Lồng Tiếng.',
+    description: 'Phim Kappa - Kho phim trực tuyến miễn phí với hàng ngàn bộ phim bom tấn, phim độc lập, phim Hàn, Âu Mỹ, hoạt hình, cập nhật mới nhất, chất lượng FHD, hỗ trợ Vietsub và Lồng Tiếng.',
     share: {
       url: 'https://phim-kappa.vercel.app'
     },
@@ -87,6 +87,7 @@ function mapToChannels(movies) {
     const id = movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`;
     const slug = movie.slug || id;
     const imageUrl = movie.poster_url || movie.thumb_url;
+    const isSeries = ['series', 'hoathinh'].includes(movie.type);
     return {
       id,
       name: movie.name || movie.title || 'Unknown Title',
@@ -95,7 +96,7 @@ function mapToChannels(movies) {
         url: imageUrl && !imageUrl.startsWith('http') ? `${CDN_IMAGE}/${imageUrl}` : imageUrl || 'https://via.placeholder.com/200x300',
         type: 'cover'
       },
-      type: movie.type === 'series' ? 'playlist' : 'single',
+      type: isSeries ? 'playlist' : 'single',
       display: 'text-below',
       enable_detail: true,
       remote_data: {
@@ -207,12 +208,13 @@ router.get('/channel-detail', async (req, res, next) => {
       return res.status(404).json({ error: `Movie not found for uid: ${uid}` });
     }
 
+    const isSeries = ['series', 'hoathinh'].includes(movie.movie.type);
     const categories = await getCategories();
     const tags = [
       {
         type: 'radio',
-        url: `https://phim-kappa.vercel.app/newest?k=${movie.movie.type === 'series' ? 'series' : 'movie'}`,
-        text: movie.movie.type === 'series' ? 'Phim bộ' : 'Phim lẻ'
+        url: `https://phim-kappa.vercel.app/newest?k=${isSeries ? 'series' : 'movie'}`,
+        text: isSeries ? 'Phim bộ' : 'Phim lẻ'
       },
       ...(movie.movie.category || []).map((cat) => {
         const category = categories.find((c) => c.name === cat.name);
@@ -232,7 +234,7 @@ router.get('/channel-detail', async (req, res, next) => {
           name: `${episode.name} (${server.server_name})`,
           remote_data: {
             url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
-            encrypted: false // Loại bỏ encrypted để thử nghiệm
+            encrypted: false
           }
         };
       });
@@ -251,29 +253,9 @@ router.get('/channel-detail', async (req, res, next) => {
       };
     });
 
-    if (sources.length === 0 || sources.every(source => source.contents[0].streams.length === 0)) {
-      console.warn(`No streams generated for uid: ${uid}`);
-      sources.push({
-        id: movie.movie._id,
-        name: 'Default',
-        contents: [
-          {
-            id: movie.movie._id,
-            name: '',
-            grid_number: 3,
-            streams: [
-              {
-                id: `default__${movie.movie._id}`,
-                name: 'Full',
-                remote_data: {
-                  url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=default__${movie.movie._id}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
-                  encrypted: false
-                }
-              }
-            ]
-          }
-        ]
-      });
+    if (!isSeries || sources.length === 0 || sources.every(source => source.contents[0].streams.length === 0)) {
+      console.warn(`No valid episodes found for uid: ${uid}`);
+      return res.status(404).json({ error: `No episodes available for ${movie.movie.name}` });
     }
 
     const response = {
@@ -334,11 +316,6 @@ router.get('/stream-detail', async (req, res, next) => {
       });
     });
 
-    if (!episode && streamId.startsWith('default__')) {
-      episode = { link_m3u8: null, name: 'Full' };
-      serverName = 'Default';
-    }
-
     if (!episode) {
       console.warn(`No episode found for streamId: ${streamId}`);
       return res.status(404).json({ error: `Episode not found for streamId: ${streamId}` });
@@ -349,7 +326,6 @@ router.get('/stream-detail', async (req, res, next) => {
       return res.status(404).json({ error: `Invalid stream URL for ${episode.name} (${serverName})` });
     }
 
-    // Kiểm tra link m3u8 bằng axios
     try {
       await axios.head(episode.link_m3u8, {
         timeout: 5000,
@@ -387,6 +363,7 @@ router.get('/share-channel', async (req, res, next) => {
     }
 
     const providerData = await getProviderData();
+    const isSeries = ['series', 'hoathinh'].includes(movie.movie.type);
 
     const channel = {
       id: movie.movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`,
@@ -396,7 +373,7 @@ router.get('/share-channel', async (req, res, next) => {
         url: movie.movie.poster_url || movie.movie.thumb_url || 'https://via.placeholder.com/200x300',
         type: 'cover'
       },
-      type: movie.movie.type === 'series' ? 'playlist' : 'single',
+      type: isSeries ? 'playlist' : 'single',
       display: 'text-below',
       enable_detail: true,
       remote_data: {
