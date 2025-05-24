@@ -23,9 +23,9 @@ async function getCountries() {
   }
 }
 
-async function getNewMovies(page = 1) {
+async function getNewMovies(page = 1, limit = 20) {
   try {
-    const response = await axios.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}`, { timeout: 10000 });
+    const response = await axios.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}&limit=${limit}`, { timeout: 10000 });
     return response.data || { items: [], totalPages: 0 };
   } catch (error) {
     console.error('Error fetching new movies:', error.message);
@@ -33,9 +33,9 @@ async function getNewMovies(page = 1) {
   }
 }
 
-async function getMoviesByCategory(slug, page = 1) {
+async function getMoviesByCategory(slug, page = 1, limit = 20) {
   try {
-    const response = await axios.get(`${BASE_URL}/v1/api/the-loai/${slug}?page=${page}&sort_field=_id&sort_type=asc`, { timeout: 10000 });
+    const response = await axios.get(`${BASE_URL}/v1/api/the-loai/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`, { timeout: 10000 });
     return response.data || { data: { items: [], totalPages: 0 } };
   } catch (error) {
     console.error(`Error fetching movies for category ${slug}:`, error.message);
@@ -43,9 +43,9 @@ async function getMoviesByCategory(slug, page = 1) {
   }
 }
 
-async function getMoviesByCountry(slug, page = 1) {
+async function getMoviesByCountry(slug, page = 1, limit = 20) {
   try {
-    const response = await axios.get(`${BASE_URL}/v1/api/quoc-gia/${slug}?page=${page}&sort_field=_id&sort_type=asc`, { timeout: 10000 });
+    const response = await axios.get(`${BASE_URL}/v1/api/quoc-gia/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`, { timeout: 10000 });
     return response.data || { data: { items: [], totalPages: 0 } };
   } catch (error) {
     console.error(`Error fetching movies for country ${slug}:`, error.message);
