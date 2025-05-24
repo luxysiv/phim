@@ -4,82 +4,90 @@ const { getCategories, getCountries, getNewMovies, getMoviesByCategory, getMovie
 
 const CDN_IMAGE = 'https://phimimg.com';
 
+// Tối ưu getProviderData với các gọi API song song
 async function getProviderData() {
-  const categories = await getCategories();
-  const countries = await getCountries();
-  const moviesData = await getNewMovies(1, 20);
-  const movies = moviesData.items || [];
+  try {
+    // Gọi đồng thời categories, countries, và new movies
+    const [categories, countries, moviesData] = await Promise.all([
+      getCategories(),
+      getCountries(),
+      getNewMovies(1, 20).catch(() => ({ items: [], totalPages: 0 })),
+    ]);
 
-  const categoryList = categories.map((cat) => ({
-    text: cat.name || 'Unknown Category',
-    type: 'radio',
-    url: `https://phim-kappa.vercel.app/sort/category?uid=${cat.slug || 'unknown'}`
-  }));
-  const countryList = countries.map((country) => ({
-    text: country.name || 'Unknown Country',
-    type: 'radio',
-    url: `https://phim-kappa.vercel.app/sort/nation?uid=${country.slug || 'unknown'}`
-  }));
+    const movies = moviesData.items || [];
 
-  const enrichedMovies = await enrichMovies(movies);
-  const channels = mapToChannels(enrichedMovies);
+    const categoryList = categories.map((cat) => ({
+      text: cat.name || 'Unknown Category',
+      type: 'radio',
+      url: `https://phim-kappa.vercel.app/sort/category?uid=${cat.slug || 'unknown'}`
+    }));
+    const countryList = countries.map((country) => ({
+      text: country.name || 'Unknown Country',
+      type: 'radio',
+      url: `https://phim-kappa.vercel.app/sort/nation?uid=${country.slug || 'unknown'}`
+    }));
 
-  return {
-    name: 'Phim Kappa',
-    id: 'phimkappa',
-    url: 'https://phim-kappa.vercel.app',
-    color: '#0f172a',
-    image: {
-      url: 'https://phim-kappa.vercel.app/public/logo.png',
-      type: 'cover'
-    },
-    description: 'Phim Kappa - Kho phim trực tuyến miễn phí với hàng ngàn bộ phim bom tấn, phim độc lập, phim Hàn, Âu Mỹ, hoạt hình, cập nhật mới nhất, chất lượng FHD, hỗ trợ Vietsub và Lồng Tiếng.',
-    share: {
-      url: 'https://phim-kappa.vercel.app'
-    },
-    sorts: [
-      {
-        text: 'Mới nhất',
-        type: 'radio',
-        url: 'https://phim-kappa.vercel.app/newest'
+    const enrichedMovies = await enrichMovies(movies);
+    const channels = mapToChannels(enrichedMovies);
+
+    return {
+      name: 'Phim Kappa',
+      id: 'phimkappa',
+      url: 'https://phim-kappa.vercel.app',
+      color: '#0f172a',
+      image: {
+        url: 'https://phim-kappa.vercel.app/public/logo.png',
+        type: 'cover'
       },
-      {
-        text: 'Thể loại',
-        type: 'dropdown',
-        value: categoryList
+      description: 'Phim Kappa - Kho phim trực tuyến miễn phí với hàng ngàn bộ phim bom tấn, phim độc lập, phim Hàn, Âu Mỹ, hoạt hình, cập nhật mới nhất, chất lượng FHD, hỗ trợ Vietsub và Lồng Tiếng.',
+      share: {
+        url: 'https://phim-kappa.vercel.app'
       },
-      {
-        text: 'Quốc gia',
-        type: 'dropdown',
-        value: countryList
-      }
-    ],
-    grid_number: 3,
-    channels
-  };
+      sorts: [
+        {
+          text: 'Mới nhất',
+          type: 'radio',
+          url: 'https://phim-kappa.vercel.app/newest'
+        },
+        {
+          text: 'Thể loại',
+          type: 'dropdown',
+          value: categoryList
+        },
+        {
+          text: 'Quốc gia',
+          type: 'dropdown',
+          value: countryList
+        }
+      ],
+      grid_number: 3,
+      channels
+    };
+  } catch (error) {
+    console.error('Error in getProviderData:', error.message);
+    throw error;
+  }
 }
 
-router.get('/', async (req, res, next) => {
-  try {
-    const providerData = await getProviderData();
-    res.json(providerData);
-  } catch (error) {
-    console.error('Error in / endpoint:', error.message);
-    next(error);
-  }
-});
-
+// Tối ưu enrichMovies với gọi song song và giảm số lượng phim
 async function enrichMovies(movies) {
-  const enriched = [];
-  for (const movie of movies.slice(0, 15)) {
-    const detail = await getMovieDetail(movie.slug);
-    enriched.push({
-      ...movie,
-      description: detail?.movie?.content || detail?.movie?.description || 'Không có mô tả chi tiết.',
-      type: detail?.movie?.type || 'series'
-    });
-  }
-  return [...enriched, ...movies.slice(15)];
+  const MAX_ENRICHED_MOVIES = 8; // Giảm từ 15 xuống 8 để tăng tốc
+  const enriched = await Promise.all(
+    movies.slice(0, MAX_ENRICHED_MOVIES).map(async (movie) => {
+      try {
+        const detail = await getMovieDetail(movie.slug);
+        return {
+          ...movie,
+          description: detail?.movie?.content || detail?.movie?.description || 'Không có mô tả chi tiết.',
+          type: detail?.movie?.type || 'series'
+        };
+      } catch (error) {
+        console.warn(`Failed to enrich movie ${movie.slug}: ${error.message}`);
+        return movie; // Fallback về dữ liệu phim gốc
+      }
+    })
+  );
+  return [...enriched, ...movies.slice(MAX_ENRICHED_MOVIES)];
 }
 
 function mapToChannels(movies) {
@@ -109,6 +117,16 @@ function mapToChannels(movies) {
   });
 }
 
+router.get('/', async (req, res, next) => {
+  try {
+    const providerData = await getProviderData();
+    res.json(providerData);
+  } catch (error) {
+    console.error('Error in / endpoint:', error.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/newest', async (req, res, next) => {
   try {
     const moviesData = await getNewMovies(1, 20);
@@ -121,7 +139,7 @@ router.get('/newest', async (req, res, next) => {
     res.json({ channels });
   } catch (error) {
     console.error('Error in /newest endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -142,7 +160,7 @@ router.get('/sort/category', async (req, res, next) => {
     res.json({ channels });
   } catch (error) {
     console.error('Error in /sort/category endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -163,7 +181,7 @@ router.get('/sort/nation', async (req, res, next) => {
     res.json({ channels });
   } catch (error) {
     console.error('Error in /sort/nation endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -191,7 +209,7 @@ router.get('/search', async (req, res, next) => {
     res.json({ channels });
   } catch (error) {
     console.error('Error in /search endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -268,7 +286,7 @@ router.get('/channel-detail', async (req, res, next) => {
     res.json({ tags, sources });
   } catch (error) {
     console.error('Error in /channel-detail endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -289,7 +307,7 @@ router.get('/group-cate', async (req, res, next) => {
     res.json({ channels });
   } catch (error) {
     console.error('Error in /group-cate endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -300,14 +318,10 @@ router.get('/stream-detail', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    // Decode streamId để so sánh chính xác
     const decodedStreamId = decodeURIComponent(streamId);
-    
-    // Tách thông tin từ streamId
     const [serverName, episodeName, ...rest] = decodedStreamId.split('__');
-    const slug = rest[0]; // Lấy slug từ streamId thay vì dùng channelId
+    const slug = rest[0]; // Lấy slug từ streamId
 
-    // Lấy thông tin phim từ slug thay vì channelId
     const movie = await getMovieDetail(slug);
     if (!movie || !movie.movie) {
       console.warn(`No movie details found for slug: ${slug}`);
@@ -316,8 +330,7 @@ router.get('/stream-detail', async (req, res, next) => {
 
     let episode;
     let found = false;
-    
-    // Tìm episode tương ứng
+
     (movie.episodes || []).forEach((server, serverIndex) => {
       if (server.server_name === serverName) {
         (server.server_data || []).forEach((ep) => {
@@ -335,7 +348,6 @@ router.get('/stream-detail', async (req, res, next) => {
       return res.status(404).json({ error: 'Episode not found or invalid stream URL' });
     }
 
-    // Trả về đúng định dạng
     res.json({
       stream_links: [{
         id: "default",
@@ -349,9 +361,8 @@ router.get('/stream-detail', async (req, res, next) => {
         }
       }]
     });
-
   } catch (error) {
-    console.error('Stream detail error:', error);
+    console.error('Stream detail error:', error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -397,7 +408,7 @@ router.get('/share-channel', async (req, res, next) => {
     });
   } catch (error) {
     console.error('Error in /share-channel endpoint:', error.message);
-    next(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
