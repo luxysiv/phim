@@ -13,6 +13,16 @@ async function getCategories() {
   }
 }
 
+async function getCountries() {
+  try {
+    const response = await axios.get(`${BASE_URL}/quoc-gia`, { timeout: 10000 });
+    return response.data || [];
+  } catch (error) {
+    console.error('Error fetching countries:', error.message);
+    return [];
+  }
+}
+
 async function getNewMovies(page = 1) {
   try {
     const response = await axios.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}`, { timeout: 10000 });
@@ -29,6 +39,16 @@ async function getMoviesByCategory(slug, page = 1) {
     return response.data || { data: { items: [], totalPages: 0 } };
   } catch (error) {
     console.error(`Error fetching movies for category ${slug}:`, error.message);
+    return { data: { items: [], totalPages: 0 } };
+  }
+}
+
+async function getMoviesByCountry(slug, page = 1) {
+  try {
+    const response = await axios.get(`${BASE_URL}/v1/api/quoc-gia/${slug}?page=${page}&sort_field=_id&sort_type=asc`, { timeout: 10000 });
+    return response.data || { data: { items: [], totalPages: 0 } };
+  } catch (error) {
+    console.error(`Error fetching movies for country ${slug}:`, error.message);
     return { data: { items: [], totalPages: 0 } };
   }
 }
@@ -60,4 +80,4 @@ async function getMovieDetail(slug) {
   }
 }
 
-module.exports = { getCategories, getNewMovies, getMoviesByCategory, searchMovies, getMovieDetail };
+module.exports = { getCategories, getCountries, getNewMovies, getMoviesByCategory, getMoviesByCountry, searchMovies, getMovieDetail };
