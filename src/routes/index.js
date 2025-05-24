@@ -1,20 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const { getCategories, getNewMovies, getMoviesByCategory, getMovieDetail } = require('../services/phimapi');
+const { getCategories, getNewMovies, getMoviesByCategory, searchMovies, getMovieDetail } = require('../services/phimapi');
+
+const CDN_IMAGE = 'https://phimimg.com';
 
 // Endpoint chính trả về JSON với sorts
 router.get('/', async (req, res) => {
-  // Lấy danh sách thể loại
   const categories = await getCategories();
-
-  // Tạo danh sách thể loại với UID dựa trên slug
   const categoryList = categories.map((cat) => ({
     text: cat.name,
     type: 'radio',
     url: `https://phim-kappa.vercel.app/sort/category?uid=${cat.slug}`
   }));
 
-  // JSON chính
   const response = {
     name: 'Phim Kappa',
     id: 'phimkappa',
@@ -45,20 +43,17 @@ router.get('/', async (req, res) => {
   res.json(response);
 });
 
-// Endpoint /newest trả về danh sách phim mới
-router.get('/newest', async (req, res) => {
-  const moviesData = await getNewMovies(1);
-  const movies = moviesData.items || [];
-
-  const channels = movies.map((movie) => ({
+// Hàm ánh xạ dữ liệu phim sang định dạng channels
+function mapToChannels(movies) {
+  return movies.map((movie) => ({
     id: movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`,
     name: movie.name || movie.title || 'Unknown Title',
     description: movie.description || movie.content || 'Không có mô tả',
     image: {
-      url: movie.poster_url || movie.thumb_url || 'https://via.placeholder.com/150',
+      url: movie.poster_url ? movie.poster_url : movie.thumb_url ? movie.thumb_url : 'https://via.placeholder.com/150',
       type: 'cover'
     },
-    type: movie.episodes ? 'playlist' : 'single',
+    type: movie.type === 'series' ? 'playlist' : 'single', // Giả định series nếu không rõ
     display: 'text-below',
     enable_detail: true,
     remote_data: {
@@ -68,11 +63,17 @@ router.get('/newest', async (req, res) => {
       url: `https://phim-kappa.vercel.app/share-channel?uid=${movie._id || movie.slug}`
     }
   }));
+}
 
+// Endpoint /newest
+router.get('/newest', async (req, res) => {
+  const moviesData = await getNewMovies(1);
+  const movies = moviesData.items || [];
+  const channels = mapToChannels(movies);
   res.json({ channels });
 });
 
-// Endpoint /sort/category trả về danh sách phim theo thể loại
+// Endpoint /sort/category
 router.get('/sort/category', async (req, res) => {
   const uid = req.query.uid;
   if (!uid) {
@@ -80,31 +81,32 @@ router.get('/sort/category', async (req, res) => {
   }
 
   const moviesData = await getMoviesByCategory(uid, 1);
-  const movies = moviesData.items || [];
-
-  const channels = movies.map((movie) => ({
-    id: movie._id || `movie-${Math.random().toString(36).substr(2, 9)}`,
-    name: movie.name || movie.title || 'Unknown Title',
-    description: movie.description || movie.content || 'Không có mô tả',
-    image: {
-      url: movie.poster_url || movie.thumb_url || 'https://via.placeholder.com/150',
-      type: 'cover'
-    },
-    type: movie.episodes ? 'playlist' : 'single',
-    display: 'text-below',
-    enable_detail: true,
-    remote_data: {
-      url: `https://phim-kappa.vercel.app/channel-detail?uid=${movie._id || movie.slug}`
-    },
-    share: {
-      url: `https://phim-kappa.vercel.app/share-channel?uid=${movie._id || movie.slug}`
-    }
-  }));
-
+  const movies = moviesData.data?.items || [];
+  const channels = mapToChannels(movies);
   res.json({ channels });
 });
 
-// Endpoint /channel-detail trả về chi tiết phim
+// Endpoint /search
+router.get('/search', async (req, res) => {
+  const keyword = req.query.keyword;
+  if (!keyword) {
+    return res.status(400).json({ error: 'Missing keyword parameter' });
+  }
+
+  const params = {
+    category: req.query.category || '',
+    country: req.query.country || '',
+    year: req.query.year || '',
+    sort_lang: req.query.sort_lang || ''
+  };
+
+  const moviesData = await searchMovies(keyword, params);
+  const movies = moviesData.data?.items || [];
+  const channels = mapToChannels(movies);
+  res.json({ channels });
+});
+
+// Endpoint /channel-detail
 router.get('/channel-detail', async (req, res) => {
   const uid = req.query.uid;
   if (!uid) {
@@ -119,7 +121,7 @@ router.get('/channel-detail', async (req, res) => {
   res.json(movie);
 });
 
-// Endpoint /share-channel trả về URL chia sẻ
+// Endpoint /share-channel
 router.get('/share-channel', (req, res) => {
   const uid = req.query.uid;
   if (!uid) {
