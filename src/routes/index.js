@@ -297,63 +297,62 @@ router.get('/stream-detail', async (req, res, next) => {
   try {
     const { channelId, streamId, contentId, sourceId } = req.query;
     if (!channelId || !streamId || !contentId || !sourceId) {
-      console.warn(`Missing parameters in /stream-detail: channelId=${channelId}, streamId=${streamId}, contentId=${contentId}, sourceId=${sourceId}`);
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    const movie = await getMovieDetail(channelId);
+    // Decode streamId để so sánh chính xác
+    const decodedStreamId = decodeURIComponent(streamId);
+    
+    // Tách thông tin từ streamId
+    const [serverName, episodeName, ...rest] = decodedStreamId.split('__');
+    const slug = rest[0]; // Lấy slug từ streamId thay vì dùng channelId
+
+    // Lấy thông tin phim từ slug thay vì channelId
+    const movie = await getMovieDetail(slug);
     if (!movie || !movie.movie) {
-      console.warn(`No movie details found for channelId: ${channelId}`);
-      return res.status(404).json({ error: `Movie not found for channelId: ${channelId}` });
+      console.warn(`No movie details found for slug: ${slug}`);
+      return res.status(404).json({ error: `Movie not found` });
     }
 
     let episode;
-    let serverName;
     let found = false;
     
-    // Tìm episode tương ứng với streamId
+    // Tìm episode tương ứng
     (movie.episodes || []).forEach((server, serverIndex) => {
-      (server.server_data || []).forEach((ep, episodeIndex) => {
-        const normalizedName = ep.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
-        const expectedStreamId = `${server.server_name}__${normalizedName}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
-        if (expectedStreamId === streamId || decodeURIComponent(streamId).includes(`${server.server_name}__${normalizedName}__${movie.movie._id}`)) {
-          episode = ep;
-          serverName = server.server_name;
-          found = true;
-        }
-      });
-    });
-
-    if (!found) {
-      console.warn(`No episode found for streamId: ${streamId} in channelId: ${channelId}`);
-      return res.status(404).json({ error: `Episode not found for streamId: ${streamId}` });
-    }
-
-    if (!episode.link_m3u8 || !episode.link_m3u8.startsWith('http')) {
-      console.warn(`Invalid m3u8 link for streamId: ${streamId} in channelId: ${channelId}`);
-      return res.status(404).json({ error: `Invalid stream URL for ${episode.name} (${serverName})` });
-    }
-
-    // Trả về đúng định dạng JSON mong muốn
-    res.json({
-      stream_links: [
-        {
-          id: "default",
-          name: "default",
-          type: "hls",
-          default: false,
-          url: episode.link_m3u8,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-            'Referer': 'https://phimapi.com/',
-            'Origin': 'https://phimapi.com'
+      if (server.server_name === serverName) {
+        (server.server_data || []).forEach((ep) => {
+          const normalizedName = ep.name.replace(/^Tập\s+(\d+)$/, 'Tập $1').replace(/^Tập\s+0+(\d+)$/, 'Tập $1');
+          if (normalizedName === episodeName) {
+            episode = ep;
+            found = true;
           }
-        }
-      ]
+        });
+      }
     });
+
+    if (!found || !episode || !episode.link_m3u8) {
+      console.warn(`Episode not found or invalid m3u8 link for streamId: ${streamId}`);
+      return res.status(404).json({ error: 'Episode not found or invalid stream URL' });
+    }
+
+    // Trả về đúng định dạng
+    res.json({
+      stream_links: [{
+        id: "default",
+        name: "default",
+        type: "hls",
+        default: false,
+        url: episode.link_m3u8,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Referer': 'https://phimapi.com/'
+        }
+      }]
+    });
+
   } catch (error) {
-    console.error('Error in /stream-detail endpoint:', error.message);
-    next(error);
+    console.error('Stream detail error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
