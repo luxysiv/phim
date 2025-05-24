@@ -7,7 +7,7 @@ const CDN_IMAGE = 'https://phimimg.com';
 async function getProviderData() {
   const categories = await getCategories();
   const countries = await getCountries();
-  const moviesData = await getNewMovies(1, 20); // Đảm bảo 20 phim
+  const moviesData = await getNewMovies(1, 20);
   const movies = moviesData.items || [];
 
   const categoryList = categories.map((cat) => ({
@@ -300,6 +300,7 @@ router.get('/stream-detail', async (req, res, next) => {
   try {
     const { channelId, streamId, contentId, sourceId } = req.query;
     if (!channelId || !streamId || !contentId || !sourceId) {
+      console.warn(`Missing parameters in /stream-detail: channelId=${channelId}, streamId=${streamId}, contentId=${contentId}, sourceId=${sourceId}`);
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
@@ -311,23 +312,25 @@ router.get('/stream-detail', async (req, res, next) => {
 
     let episode;
     let serverName;
+    let found = false;
     (movie.episodes || []).forEach((server, serverIndex) => {
       (server.server_data || []).forEach((ep, episodeIndex) => {
         const expectedStreamId = `${server.server_name}__${ep.name}__${movie.movie._id}__${serverIndex}_${episodeIndex}`;
         if (expectedStreamId === streamId) {
           episode = ep;
           serverName = server.server_name;
+          found = true;
         }
       });
     });
 
-    if (!episode) {
-      console.warn(`No episode found for streamId: ${streamId}`);
+    if (!found) {
+      console.warn(`No episode found for streamId: ${streamId} in channelId: ${channelId}`);
       return res.status(404).json({ error: `Episode not found for streamId: ${streamId}` });
     }
 
     if (!episode.link_m3u8 || !episode.link_m3u8.startsWith('http')) {
-      console.warn(`Invalid m3u8 link for streamId: ${streamId}`);
+      console.warn(`Invalid m3u8 link for streamId: ${streamId} in channelId: ${channelId}`);
       return res.status(404).json({ error: `Invalid stream URL for ${episode.name} (${serverName})` });
     }
 
@@ -337,7 +340,8 @@ router.get('/stream-detail', async (req, res, next) => {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
         'Referer': 'https://phimapi.com',
-        'Origin': 'https://phimapi.com'
+        'Origin': 'https://phimapi.com',
+        'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL'
       }
     });
   } catch (error) {
