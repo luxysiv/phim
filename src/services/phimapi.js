@@ -4,7 +4,8 @@ const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 });
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
-const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5'];
+const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5', 's6'];
+const SERVER_DOMAINS = ['phim1280.tv', 'kkphimplayer6.com'];
 
 async function getCategories() {
   const cacheKey = 'categories';
@@ -110,43 +111,50 @@ async function searchMovies(keyword, params = {}) {
 }
 
 async function validateM3u8Link(link, slug, episodeName, serverName) {
-  const cachedSubdomain = cache.get(`valid_subdomain_${link}`);
-  if (cachedSubdomain) {
-    return link.replace(/s\d\.phim1280\.tv/, `${cachedSubdomain}.phim1280.tv`);
+  const cachedUrl = cache.get(`valid_url_${link}`);
+  if (cachedUrl) {
+    return cachedUrl;
   }
 
-  const requests = SERVER_SUBDOMAINS.map(async (subdomain) => {
-    const url = link.replace(/s\d\.phim1280\.tv/, `${subdomain}.phim1280.tv`);
-    try {
-      const response = await axios.head(url, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-          'Referer': 'https://phimapi.com',
-          'Origin': 'https://phimapi.com',
-          'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
-          'Connection': 'keep-alive'
-        }
-      });
-      const contentType = response.headers['content-type'] || '';
-      if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
-        return { subdomain, url };
-      }
-      console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (subdomain: ${subdomain})`);
-      return null;
-    } catch (error) {
-      console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (subdomain: ${subdomain}): ${error.message}`);
-      return null;
+  const requests = [];
+  for (const domain of SERVER_DOMAINS) {
+    for (const subdomain of SERVER_SUBDOMAINS) {
+      const url = link.replace(/s\d+\.\w+\.\w+/, `${subdomain}.${domain}`);
+      requests.push(
+        (async () => {
+          try {
+            const response = await axios.head(url, {
+              timeout: 10000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+                'Referer': 'https://phimapi.com',
+                'Origin': 'https://phimapi.com',
+                'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
+                'Connection': 'keep-alive'
+              }
+            });
+            const contentType = response.headers['content-type'] || '';
+            if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
+              return { url };
+            }
+            console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (${url})`);
+            return null;
+          } catch (error) {
+            console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (${url}): ${error.message}`);
+            return null;
+          }
+        })()
+      );
     }
-  });
+  }
 
   const results = await Promise.all(requests);
   const validResult = results.find((result) => result);
   if (validResult) {
-    cache.set(`valid_subdomain_${link}`, validResult.subdomain, 3600);
+    cache.set(`valid_url_${link}`, validResult.url, 3600);
     return validResult.url;
   }
-  return null;
+  return link; // Trả về link gốc nếu không validate được
 }
 
 async function getMovieDetail(slug) {
@@ -167,25 +175,21 @@ async function getMovieDetail(slug) {
       if (!data.episodes || data.episodes.length === 0) {
         console.warn(`No episodes found for slug: ${slug}`);
       } else {
-        data.episodes.forEach((server, serverIndex) => {
+        for (const server of data.episodes) {
           if (!server.server_data || server.server_data.length === 0) {
             console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
           } else {
             console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
-            server.server_data.forEach(async (item, itemIndex) => {
+            for (const item of server.server_data) {
               if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
                 console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
               } else {
                 const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
-                if (validLink) {
-                  item.link_m3u8 = validLink;
-                } else {
-                  console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-                }
+                item.link_m3u8 = validLink;
               }
-            });
+            }
           }
-        });
+        }
       }
       cache.set(cacheKey, data);
     } else {
