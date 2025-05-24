@@ -156,44 +156,46 @@ async function getMovieDetail(slug) {
 
   try {
     const response = await axios.get(`${BASE_URL}/phim/${slug}`, {
-      timeout: 15000,
+      timeout: 10000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-        'Referer': 'https://phimapi.com'
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': 'https://phimapi.com/'
       }
     });
-    const data = response.data || null;
-    if (data) {
-      if (!data.episodes || data.episodes.length === 0) {
-        console.warn(`No episodes found for slug: ${slug}`);
-      } else {
-        data.episodes.forEach((server, serverIndex) => {
-          if (!server.server_data || server.server_data.length === 0) {
-            console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
-          } else {
-            console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
-            server.server_data.forEach(async (item, itemIndex) => {
-              if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
-                console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-              } else {
-                const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
-                if (validLink) {
-                  item.link_m3u8 = validLink;
-                } else {
-                  console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-                }
-              }
-            });
-          }
-        });
-      }
-      cache.set(cacheKey, data);
-    } else {
-      console.warn(`No data returned for slug: ${slug}`);
+
+    const data = response.data;
+    if (!data || !data.movie) {
+      console.warn(`Invalid response for slug: ${slug}`);
+      return null;
     }
+
+    // Xử lý các server phát
+    if (data.episodes && data.episodes.length > 0) {
+      for (const server of data.episodes) {
+        if (server.server_data && server.server_data.length > 0) {
+          for (const episode of server.server_data) {
+            if (episode.link_m3u8) {
+              // Validate link m3u8
+              const validLink = await validateM3u8Link(
+                episode.link_m3u8, 
+                slug, 
+                episode.name, 
+                server.server_name
+              );
+              if (validLink) {
+                episode.link_m3u8 = validLink;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    cache.set(cacheKey, data, 1800); // Cache 30 phút
     return data;
+
   } catch (error) {
-    console.error(`Error fetching movie detail for slug ${slug}:`, error.message);
+    console.error(`Error fetching movie ${slug}:`, error.message);
     return null;
   }
 }
