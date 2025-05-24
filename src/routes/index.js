@@ -236,8 +236,15 @@ router.get('/channel-detail', async (req, res, next) => {
             id: streamId,
             name: isSeries ? `${normalizedName} (${server.server_name})` : 'Full',
             remote_data: {
-              url: `https://phim-kappa.vercel.app/stream-detail?channelId=${movie.movie._id}&streamId=${streamId}&contentId=${movie.movie._id}&sourceId=${movie.movie._id}`,
-              encrypted: false
+              url: episode.link_m3u8,
+              encrypted: false,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+                'Referer': 'https://phimapi.com',
+                'Origin': 'https://phimapi.com',
+                'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
+                'Connection': 'keep-alive'
+              }
             }
           };
         });
