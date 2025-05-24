@@ -124,7 +124,8 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
           'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
           'Referer': 'https://phimapi.com',
           'Origin': 'https://phimapi.com',
-          'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL'
+          'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL',
+          'Connection': 'keep-alive'
         }
       });
       const contentType = response.headers['content-type'] || '';
@@ -166,11 +167,12 @@ async function getMovieDetail(slug) {
       if (!data.episodes || data.episodes.length === 0) {
         console.warn(`No episodes found for slug: ${slug}`);
       } else {
-        for (const server of data.episodes) {
+        data.episodes.forEach((server, serverIndex) => {
           if (!server.server_data || server.server_data.length === 0) {
             console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
           } else {
-            for (const item of server.server_data) {
+            console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
+            server.server_data.forEach(async (item, itemIndex) => {
               if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
                 console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
               } else {
@@ -181,9 +183,9 @@ async function getMovieDetail(slug) {
                   console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
                 }
               }
-            }
+            });
           }
-        }
+        });
       }
       cache.set(cacheKey, data);
     } else {
