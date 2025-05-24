@@ -1,28 +1,10 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
-const retry = require('axios-retry');
 
 const cache = new NodeCache({ stdTTL: 3600 });
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
 const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5'];
-
-// Cấu hình axios với retry
-const axiosInstance = axios.create({
-  timeout: 20000, // Tăng timeout lên 20s
-  headers: {
-    'User-Agent': 'Mozilla/5.0',
-    'Referer': 'https://phimapi.com/'
-  }
-});
-
-retry(axiosInstance, {
-  retries: 2, // Thử lại 2 lần
-  retryDelay: (retryCount) => retryCount * 1000, // Delay 1s, 2s
-  retryCondition: (error) => {
-    return axios.isCancel(error) || error.response?.status >= 500 || error.code === 'ECONNABORTED';
-  }
-});
 
 async function getCategories() {
   const cacheKey = 'categories';
@@ -30,13 +12,13 @@ async function getCategories() {
   if (cached) return cached;
 
   try {
-    const response = await axiosInstance.get(`${BASE_URL}/the-loai`);
+    const response = await axios.get(`${BASE_URL}/the-loai`, { timeout: 15000 });
     const data = response.data || [];
     cache.set(cacheKey, data);
     return data;
   } catch (error) {
     console.error('Error fetching categories:', error.message);
-    return cache.get(cacheKey) || []; // Fallback to stale cache
+    return [];
   }
 }
 
@@ -46,13 +28,13 @@ async function getCountries() {
   if (cached) return cached;
 
   try {
-    const response = await axiosInstance.get(`${BASE_URL}/quoc-gia`);
+    const response = await axios.get(`${BASE_URL}/quoc-gia`, { timeout: 15000 });
     const data = response.data || [];
     cache.set(cacheKey, data);
     return data;
   } catch (error) {
     console.error('Error fetching countries:', error.message);
-    return cache.get(cacheKey) || []; // Fallback to stale cache
+    return [];
   }
 }
 
@@ -62,13 +44,13 @@ async function getNewMovies(page = 1, limit = 20) {
   if (cached) return cached;
 
   try {
-    const response = await axiosInstance.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}&limit=${limit}`);
+    const response = await axios.get(`${BASE_URL}/danh-sach/phim-moi-cap-nhat?page=${page}&limit=${limit}`, { timeout: 15000 });
     const data = response.data || { items: [], totalPages: 0 };
     cache.set(cacheKey, data);
     return data;
   } catch (error) {
     console.error('Error fetching new movies:', error.message);
-    return cache.get(cacheKey) || { items: [], totalPages: 0 }; // Fallback to stale cache
+    return { items: [], totalPages: 0 };
   }
 }
 
@@ -78,13 +60,13 @@ async function getMoviesByCategory(slug, page = 1, limit = 20) {
   if (cached) return cached;
 
   try {
-    const response = await axiosInstance.get(`${BASE_URL}/v1/api/the-loai/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`);
+    const response = await axios.get(`${BASE_URL}/v1/api/the-loai/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`, { timeout: 15000 });
     const data = response.data || { data: { items: [], totalPages: 0 } };
     cache.set(cacheKey, data);
     return data;
   } catch (error) {
     console.error(`Error fetching movies for category ${slug}:`, error.message);
-    return cache.get(cacheKey) || { data: { items: [], totalPages: 0 } }; // Fallback to stale cache
+    return { data: { items: [], totalPages: 0 } };
   }
 }
 
@@ -94,13 +76,13 @@ async function getMoviesByCountry(slug, page = 1, limit = 20) {
   if (cached) return cached;
 
   try {
-    const response = await axiosInstance.get(`${BASE_URL}/v1/api/quoc-gia/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`);
+    const response = await axios.get(`${BASE_URL}/v1/api/quoc-gia/${slug}?page=${page}&limit=${limit}&sort_field=_id&sort_type=asc`, { timeout: 15000 });
     const data = response.data || { data: { items: [], totalPages: 0 } };
     cache.set(cacheKey, data);
     return data;
   } catch (error) {
     console.error(`Error fetching movies for country ${slug}:`, error.message);
-    return cache.get(cacheKey) || { data: { items: [], totalPages: 0 } }; // Fallback to stale cache
+    return { data: { items: [], totalPages: 0 } };
   }
 }
 
@@ -117,13 +99,13 @@ async function searchMovies(keyword, params = {}) {
       sort_type: 'asc',
       ...params
     }).toString();
-    const response = await axiosInstance.get(`${BASE_URL}/v1/api/tim-kiem?${query}`);
+    const response = await axios.get(`${BASE_URL}/v1/api/tim-kiem?${query}`, { timeout: 15000 });
     const data = response.data || { data: { items: [], totalPages: 0 } };
     cache.set(cacheKey, data);
     return data;
   } catch (error) {
     console.error('Error searching movies:', error.message);
-    return cache.get(cacheKey) || { data: { items: [], totalPages: 0 } }; // Fallback to stale cache
+    return { data: { items: [], totalPages: 0 } };
   }
 }
 
@@ -133,12 +115,11 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
     return link.replace(/s\d\.phim1280\.tv/, `${cachedSubdomain}.phim1280.tv`);
   }
 
-  // Kiểm tra subdomains song song
   const requests = SERVER_SUBDOMAINS.map(async (subdomain) => {
     const url = link.replace(/s\d\.phim1280\.tv/, `${subdomain}.phim1280.tv`);
     try {
-      const response = await axiosInstance.head(url, {
-        timeout: 5000, // Giảm timeout cho HEAD request
+      const response = await axios.head(url, {
+        timeout: 10000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
           'Referer': 'https://phimapi.com',
@@ -165,7 +146,6 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
     cache.set(`valid_subdomain_${link}`, validResult.subdomain, 3600);
     return validResult.url;
   }
-  console.warn(`No valid m3u8 link found for episode ${episodeName} in server ${serverName} for slug: ${slug}`);
   return null;
 }
 
@@ -175,43 +155,46 @@ async function getMovieDetail(slug) {
   if (cached) return cached;
 
   try {
-    const response = await axiosInstance.get(`${BASE_URL}/phim/${slug}`);
-    const data = response.data;
-    if (!data || !data.movie) {
-      console.warn(`Invalid response for slug: ${slug}`);
-      return null;
-    }
-
-    // Xử lý episodes song song
-    if (data.episodes && data.episodes.length > 0) {
-      await Promise.all(
-        data.episodes.map(async (server) => {
-          if (server.server_data && server.server_data.length > 0) {
-            await Promise.all(
-              server.server_data.map(async (episode) => {
-                if (episode.link_m3u8) {
-                  const validLink = await validateM3u8Link(
-                    episode.link_m3u8,
-                    slug,
-                    episode.name,
-                    server.server_name
-                  );
-                  if (validLink) {
-                    episode.link_m3u8 = validLink;
-                  }
+    const response = await axios.get(`${BASE_URL}/phim/${slug}`, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+        'Referer': 'https://phimapi.com'
+      }
+    });
+    const data = response.data || null;
+    if (data) {
+      if (!data.episodes || data.episodes.length === 0) {
+        console.warn(`No episodes found for slug: ${slug}`);
+      } else {
+        data.episodes.forEach((server, serverIndex) => {
+          if (!server.server_data || server.server_data.length === 0) {
+            console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
+          } else {
+            console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
+            server.server_data.forEach(async (item, itemIndex) => {
+              if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
+                console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
+              } else {
+                const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
+                if (validLink) {
+                  item.link_m3u8 = validLink;
+                } else {
+                  console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
                 }
-              })
-            );
+              }
+            });
           }
-        })
-      );
+        });
+      }
+      cache.set(cacheKey, data);
+    } else {
+      console.warn(`No data returned for slug: ${slug}`);
     }
-
-    cache.set(cacheKey, data, 1800); // Cache 30 phút
     return data;
   } catch (error) {
-    console.error(`Error fetching movie ${slug}:`, error.message);
-    return cache.get(cacheKey) || null; // Fallback to stale cache
+    console.error(`Error fetching movie detail for slug ${slug}:`, error.message);
+    return null;
   }
 }
 
