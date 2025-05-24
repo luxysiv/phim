@@ -1,7 +1,7 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
 
-const cache = new NodeCache({ stdTTL: 3600 }); // Cache 1 giờ
+const cache = new NodeCache({ stdTTL: 3600 });
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
 
@@ -114,9 +114,32 @@ async function getMovieDetail(slug) {
   if (cached) return cached;
 
   try {
-    const response = await axios.get(`${BASE_URL}/phim/${slug}`, { timeout: 15000 });
+    const response = await axios.get(`${BASE_URL}/phim/${slug}`, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://phimapi.com'
+      }
+    });
     const data = response.data || null;
-    if (data) cache.set(cacheKey, data);
+    if (data) {
+      if (!data.episodes || data.episodes.length === 0) {
+        console.warn(`No episodes found for slug: ${slug}`);
+      } else {
+        data.episodes.forEach((server, index) => {
+          if (!server.server_data || server.server_data.length === 0) {
+            console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
+          } else {
+            server.server_data.forEach((item, idx) => {
+              if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
+                console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
+              }
+            });
+          }
+        });
+      }
+      cache.set(cacheKey, data);
+    }
     return data;
   } catch (error) {
     console.error(`Error fetching movie detail for slug ${slug}:`, error.message);
