@@ -8,6 +8,9 @@ router.get('/', async (req, res, next) => {
   try {
     const categories = await getCategories();
     const countries = await getCountries();
+    const moviesData = await getNewMovies(1, 20);
+    const movies = moviesData.items || [];
+
     const categoryList = categories.map((cat) => ({
       text: cat.name || 'Unknown Category',
       type: 'radio',
@@ -16,8 +19,11 @@ router.get('/', async (req, res, next) => {
     const countryList = countries.map((country) => ({
       text: country.name || 'Unknown Country',
       type: 'radio',
-      url: `https://phim-kappa.vercel.app/sort/country?uid=${country.slug || 'unknown'}`
+      url: `https://phim-kappa.vercel.app/sort/nation?uid=${country.slug || 'unknown'}`
     }));
+
+    const enrichedMovies = await enrichMovies(movies);
+    const channels = mapToChannels(enrichedMovies);
 
     const response = {
       name: 'Phim Kappa',
@@ -31,6 +37,12 @@ router.get('/', async (req, res, next) => {
       description: 'Phim Kappa là nơi tập hợp các bộ phim hay nhất, mới nhất, hot nhất, mang đến trải nghiệm xem phim mượt mà và chất lượng cao.',
       share: {
         url: 'https://phim-kappa.vercel.app'
+      },
+      notice: {
+        id: 'notice-1',
+        link: 'https://t.me/xemgicungshare',
+        icon: 'https://s3.cdnfastest.com/mvdb/img/tele.png',
+        closeable: true
       },
       sorts: [
         {
@@ -48,7 +60,9 @@ router.get('/', async (req, res, next) => {
           type: 'dropdown',
           value: countryList
         }
-      ]
+      ],
+      grid_number: 3,
+      channels
     };
 
     res.json(response);
@@ -134,7 +148,7 @@ router.get('/sort/category', async (req, res, next) => {
   }
 });
 
-router.get('/sort/country', async (req, res, next) => {
+router.get('/sort/nation', async (req, res, next) => {
   try {
     const uid = req.query.uid;
     if (!uid) {
@@ -144,13 +158,13 @@ router.get('/sort/country', async (req, res, next) => {
     const moviesData = await getMoviesByCountry(uid, 1, 20);
     const movies = moviesData.data?.items || [];
     if (!movies.length) {
-      console.warn(`No movies found for country: ${uid}`);
+      console.warn(`No movies found for nation: ${uid}`);
     }
     const enrichedMovies = await enrichMovies(movies);
     const channels = mapToChannels(enrichedMovies);
     res.json({ channels });
   } catch (error) {
-    console.error('Error in /sort/country endpoint:', error.message);
+    console.error('Error in /sort/nation endpoint:', error.message);
     next(error);
   }
 });
