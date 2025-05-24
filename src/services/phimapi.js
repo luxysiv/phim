@@ -1,6 +1,7 @@
 const axios = require('axios');
 
 const BASE_URL = 'https://phimapi.com';
+const CDN_IMAGE = 'https://phimimg.com';
 
 // Lấy danh sách thể loại
 async function getCategories() {
@@ -31,7 +32,25 @@ async function getMoviesByCategory(slug, page = 1) {
     return response.data;
   } catch (error) {
     console.error('Error fetching movies by category:', error.message);
-    return { items: [], totalPages: 0 };
+    return { data: { items: [], totalPages: 0 } };
+  }
+}
+
+// Tìm kiếm phim
+async function searchMovies(keyword, params = {}) {
+  try {
+    const query = new URLSearchParams({
+      keyword,
+      page: params.page || 1,
+      sort_field: '_id',
+      sort_type: 'asc',
+      ...params
+    }).toString();
+    const response = await axios.get(`${BASE_URL}/v1/api/tim-kiem?${query}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error searching movies:', error.message);
+    return { data: { items: [], totalPages: 0 } };
   }
 }
 
@@ -46,4 +65,4 @@ async function getMovieDetail(slug) {
   }
 }
 
-module.exports = { getCategories, getNewMovies, getMoviesByCategory, getMovieDetail };
+module.exports = { getCategories, getNewMovies, getMoviesByCategory, searchMovies, getMovieDetail };
