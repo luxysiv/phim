@@ -55,7 +55,7 @@ async function getProviderData() {
       }
     ],
     grid_number: 3,
-    movies: moviesList // Đổi từ channels thành movies để tương thích MonPlayer
+    movies: moviesList
   };
 }
 
