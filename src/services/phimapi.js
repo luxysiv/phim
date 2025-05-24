@@ -4,7 +4,7 @@ const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 3600 });
 const BASE_URL = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
-const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5']; // Danh sách subdomain
+const SERVER_SUBDOMAINS = ['s1', 's2', 's3', 's4', 's5'];
 
 async function getCategories() {
   const cacheKey = 'categories';
@@ -110,27 +110,40 @@ async function searchMovies(keyword, params = {}) {
 }
 
 async function validateM3u8Link(link, slug, episodeName, serverName) {
-  for (const subdomain of SERVER_SUBDOMAINS) {
+  const cachedSubdomain = cache.get(`valid_subdomain_${link}`);
+  if (cachedSubdomain) {
+    return link.replace(/s\d\.phim1280\.tv/, `${cachedSubdomain}.phim1280.tv`);
+  }
+
+  const requests = SERVER_SUBDOMAINS.map(async (subdomain) => {
     const url = link.replace(/s\d\.phim1280\.tv/, `${subdomain}.phim1280.tv`);
     try {
       const response = await axios.head(url, {
-        timeout: 5000,
+        timeout: 10000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
           'Referer': 'https://phimapi.com',
-          'Origin': 'https://phimapi.com'
+          'Origin': 'https://phimapi.com',
+          'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL'
         }
       });
       const contentType = response.headers['content-type'] || '';
       if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
-        cache.set(`valid_subdomain_${link}`, subdomain, 3600);
-        return url;
-      } else {
-        console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (subdomain: ${subdomain})`);
+        return { subdomain, url };
       }
+      console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (subdomain: ${subdomain})`);
+      return null;
     } catch (error) {
       console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (subdomain: ${subdomain}): ${error.message}`);
+      return null;
     }
+  });
+
+  const results = await Promise.all(requests);
+  const validResult = results.find((result) => result);
+  if (validResult) {
+    cache.set(`valid_subdomain_${link}`, validResult.subdomain, 3600);
+    return validResult.url;
   }
   return null;
 }
