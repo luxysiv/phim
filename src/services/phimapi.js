@@ -115,7 +115,7 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
     return link.replace(/s\d\.phim1280\.tv/, `${cachedSubdomain}.phim1280.tv`);
   }
 
-  const requests = SERVER_SUBDOMAINS.map(async (subdomain) => {
+  for (const subdomain of SERVER_SUBDOMAINS) {
     const url = link.replace(/s\d\.phim1280\.tv/, `${subdomain}.phim1280.tv`);
     try {
       const response = await axios.head(url, {
@@ -129,23 +129,33 @@ async function validateM3u8Link(link, slug, episodeName, serverName) {
         }
       });
       const contentType = response.headers['content-type'] || '';
-      if (contentType.includes('application/vnd.apple.mpegurl') || contentType.includes('application/x-mpegURL')) {
-        return { subdomain, url };
+      if (
+        contentType.includes('application/vnd.apple.mpegurl') ||
+        contentType.includes('application/x-mpegURL') ||
+        response.status === 200
+      ) {
+        cache.set(`valid_subdomain_${link}`, subdomain, 3600);
+        console.log(`Valid m3u8 link found: ${url} for episode ${episodeName} in server ${serverName} (slug: ${slug})`);
+        return url;
       }
-      console.warn(`Non-m3u8 Content-Type for episode ${episodeName} in server ${serverName} for slug: ${slug}: ${contentType} (subdomain: ${subdomain})`);
-      return null;
+      console.warn(`Invalid Content-Type for ${url}: ${contentType} (episode: ${episodeName}, server: ${serverName}, slug: ${slug})`);
     } catch (error) {
-      console.warn(`Failed to validate m3u8 link for episode ${episodeName} in server ${serverName} for slug: ${slug} (subdomain: ${subdomain}): ${error.message}`);
-      return null;
+      console.warn(`Failed to validate ${url} for episode ${episodeName} in server ${serverName} (slug: ${slug}): ${error.message}`);
     }
-  });
-
-  const results = await Promise.all(requests);
-  const validResult = results.find((result) => result);
-  if (validResult) {
-    cache.set(`valid_subdomain_${link}`, validResult.subdomain, 3600);
-    return validResult.url;
   }
+
+  // Fallback: Thử link gốc
+  try {
+    const response = await axios.head(link, { timeout: 10000 });
+    if (response.status === 200) {
+      console.log(`Fallback: Valid original link: ${link} for episode ${episodeName} (slug: ${slug})`);
+      return link;
+    }
+  } catch (error) {
+    console.warn(`Fallback check failed for ${link}: ${error.message} (episode: ${episodeName}, slug: ${slug})`);
+  }
+
+  console.error(`No valid m3u8 link found for episode ${episodeName} in server ${serverName} (slug: ${slug})`);
   return null;
 }
 
@@ -163,33 +173,29 @@ async function getMovieDetail(slug) {
       }
     });
     const data = response.data || null;
-    if (data) {
-      if (!data.episodes || data.episodes.length === 0) {
-        console.warn(`No episodes found for slug: ${slug}`);
-      } else {
-        data.episodes.forEach((server, serverIndex) => {
-          if (!server.server_data || server.server_data.length === 0) {
-            console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
+    if (data && data.episodes && data.episodes.length > 0) {
+      for (const server of data.episodes) {
+        if (!server.server_data || server.server_data.length === 0) {
+          console.warn(`No items in server ${server.server_name} for slug: ${slug}`);
+          continue;
+        }
+        console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
+        for (const item of server.server_data) {
+          if (item.link_m3u8 && item.link_m3u8.startsWith('http')) {
+            const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
+            item.link_m3u8 = validLink || item.link_m3u8; // Giữ link gốc nếu không tìm thấy link hợp lệ
+            console.log(`Processed link for episode ${item.name}: ${item.link_m3u8}`);
+          } else if (item.link && item.link.endsWith('.mp4')) {
+            item.link_mp4 = item.link; // Hỗ trợ MP4 nếu có
+            console.log(`Found MP4 link for episode ${item.name}: ${item.link_mp4}`);
           } else {
-            console.log(`Found ${server.server_data.length} episodes in server ${server.server_name} for slug: ${slug}`);
-            server.server_data.forEach(async (item, itemIndex) => {
-              if (!item.link_m3u8 || !item.link_m3u8.startsWith('http')) {
-                console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-              } else {
-                const validLink = await validateM3u8Link(item.link_m3u8, slug, item.name, server.server_name);
-                if (validLink) {
-                  item.link_m3u8 = validLink;
-                } else {
-                  console.warn(`No valid m3u8 link found for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
-                }
-              }
-            });
+            console.warn(`Invalid m3u8 link for episode ${item.name} in server ${server.server_name} for slug: ${slug}`);
           }
-        });
+        }
       }
       cache.set(cacheKey, data);
     } else {
-      console.warn(`No data returned for slug: ${slug}`);
+      console.warn(`No episodes or data for slug: ${slug}`);
     }
     return data;
   } catch (error) {
