@@ -2,6 +2,17 @@ const axios = require('axios');
 
 const BASE_URL = 'https://phimapi.com';
 
+// Lấy danh sách thể loại
+async function getCategories() {
+  try {
+    const response = await axios.get(`${BASE_URL}/the-loai`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching categories:', error.message);
+    return [];
+  }
+}
+
 // Lấy danh sách phim mới cập nhật
 async function getNewMovies(page = 1) {
   try {
@@ -13,4 +24,15 @@ async function getNewMovies(page = 1) {
   }
 }
 
-module.exports = { getNewMovies };
+// Lấy danh sách phim theo thể loại
+async function getMoviesByCategory(slug, page = 1) {
+  try {
+    const response = await axios.get(`${BASE_URL}/v1/api/the-loai/${slug}?page=${page}&sort_field=_id&sort_type=asc`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching movies by category:', error.message);
+    return { items: [], totalPages: 0 };
+  }
+}
+
+module.exports = { getCategories, getNewMovies, getMoviesByCategory };
